@@ -9,7 +9,7 @@
 //   peers: about 2 x limit + 1. benchmarks and a sector lookup: 1 to 40.
 import { INDUSTRY_EN, type Plan } from "./data";
 
-export const ATTRIBUTION = "Source: EDINET (Financial Services Agency of Japan); processed by japanfilings. Not investment advice.";
+export const ATTRIBUTION = "Source: EDINET (Financial Services Agency of Japan); processed by JapanStake. Not investment advice.";
 const NOTE = "Filters and figures are descriptive, from filings. No stock prices or valuation; not a recommendation. stated_rating is one bond's rating as the issuer stated it in a filing on stated_rating_date: the agency's opinion, not ours, and it may have changed. Agencies' scales are not equivalent.";
 
 // The allow-list. Column names only ever come from these keys, values are always bound.

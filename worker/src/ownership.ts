@@ -4,7 +4,7 @@
 import type { Plan } from "./data";
 import { INDIVIDUAL, filerFlags, filerHidden, publicEvent, publicFilerName } from "./privacy";
 
-const ATTRIBUTION = "Source: EDINET (Financial Services Agency of Japan), SEC Form N-PORT; processed by japanfilings. Not investment advice.";
+const ATTRIBUTION = "Source: EDINET (Financial Services Agency of Japan), SEC Form N-PORT; processed by JapanStake. Not investment advice.";
 const GROUP_NOTES =
   "A group collects entities by shared EDINET code, identical name, or a reviewed list of corporate relationships; confidence and match_rule are given per member. " +
   "Membership does not mean members act together. Only filings that name joint holders state that, and those are listed separately. Uncertain names stay separate.";

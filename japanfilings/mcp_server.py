@@ -1,9 +1,9 @@
 """English MCP server (stdio) that runs on the user's machine.
 
-Filing data comes from the hosted API when JAPANFILINGS_API_URL and JAPANFILINGS_API_KEY are set,
+Filing data comes from the hosted API when JAPANSTAKE_API_URL and JAPANSTAKE_API_KEY are set,
 otherwise from the local store. Prices come only from the user's own J-Quants key (JQUANTS_API_KEY).
 
-Claude Code:  claude mcp add japanfilings -- /path/.venv/bin/python -m japanfilings.mcp_server
+Claude Code:  claude mcp add japanstake -- /path/.venv/bin/python -m japanfilings.mcp_server
 """
 import json
 import os
@@ -15,7 +15,7 @@ from mcp.server.mcpserver import MCPServer
 from . import byok, store
 
 server = MCPServer(
-    name="japanfilings",
+    name="japanstake",
     instructions=(
         "Japanese listed-company data from official filings (EDINET, Financial Services Agency of Japan). "
         "Company names are given in English when the filer registered one; Japanese originals are kept "
@@ -30,7 +30,7 @@ def _con():
 
 
 def _remote(path):
-    url, key = os.environ.get("JAPANFILINGS_API_URL"), os.environ.get("JAPANFILINGS_API_KEY")
+    url, key = os.environ.get("JAPANSTAKE_API_URL"), os.environ.get("JAPANSTAKE_API_KEY")
     if not (url and key):
         return None
     req = urllib.request.Request(url.rstrip("/") + path, headers={"Authorization": f"Bearer {key}"})
@@ -39,7 +39,7 @@ def _remote(path):
 
 
 def _annual_report(ticker):
-    if os.environ.get("JAPANFILINGS_API_URL"):
+    if os.environ.get("JAPANSTAKE_API_URL"):
         fin = _remote(f"/v1/companies/{ticker}/financials")
         det = _remote(f"/v1/companies/{ticker}/details")
         return {**fin, "company": det} if fin else None
@@ -77,7 +77,7 @@ def get_large_holdings(ticker: str = "", filer_edinet_code: str = "", since: str
 @server.tool()
 def get_us_fund_holdings(ticker: str) -> dict:
     """U.S. mutual funds and ETFs holding a Tokyo-listed stock, from the latest SEC N-PORT quarter."""
-    if os.environ.get("JAPANFILINGS_API_URL"):
+    if os.environ.get("JAPANSTAKE_API_URL"):
         return _remote(f"/v1/companies/{ticker}/us-funds")
     return store.us_fund_holdings(_con(), ticker) or {"error": f"no U.S. fund holdings for {ticker}"}
 

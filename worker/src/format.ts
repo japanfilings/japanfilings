@@ -120,7 +120,7 @@ export const dataResponse: MiddlewareHandler<{ Bindings: { DB: D1Database } }> =
   }
   const headers = new Headers(c.res.headers);
   headers.set("Content-Type", "text/csv; charset=utf-8");
-  headers.set("Content-Disposition", `attachment; filename="japanfilings-${path.split("/").filter(Boolean).slice(1).join("-").replace(/[^A-Za-z0-9-]/g, "") || "data"}.csv"`);
+  headers.set("Content-Disposition", `attachment; filename="japanstake-${path.split("/").filter(Boolean).slice(1).join("-").replace(/[^A-Za-z0-9-]/g, "") || "data"}.csv"`);
   // The attribution travels with the file's response: source credit is a condition of the data's licence.
   if (typeof body.attribution === "string") headers.set("X-Attribution", headerSafe(body.attribution));
   if (body.next_cursor) headers.set("X-Next-Cursor", headerSafe(String(body.next_cursor)));

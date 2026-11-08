@@ -522,7 +522,7 @@ def check(url, ignore=(), tries=3, wait=30):
     err = None
     for attempt in range(tries):
         try:
-            req = urllib.request.Request(base + "/v1/freshness", headers={"User-Agent": "japanfilings-watchdog/0.1"})
+            req = urllib.request.Request(base + "/v1/freshness", headers={"User-Agent": "japanstake-watchdog/0.1"})
             with urllib.request.urlopen(req, timeout=30) as r:
                 bad = problems(json.load(r), ignore)
             for b in bad:

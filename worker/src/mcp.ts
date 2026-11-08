@@ -297,7 +297,7 @@ export async function handleMcp(db: D1Database, plan: data.Plan, msg: Rpc, auth?
       return ok(msg.id, {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "japanfilings", version: "0.4.0" },
+        serverInfo: { name: "japanstake", version: "0.4.0" },
         instructions: INSTRUCTIONS,
       });
     case "ping":

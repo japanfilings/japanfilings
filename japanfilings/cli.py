@@ -381,7 +381,7 @@ def _check_freshness(url, max_age_days, tries=3, wait=30):
     error = None
     for attempt in range(tries):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "japanfilings-watchdog/0.1"})
+            req = urllib.request.Request(url, headers={"User-Agent": "japanstake-watchdog/0.1"})
             with urllib.request.urlopen(req, timeout=30) as r:
                 error = status_problem(json.load(r), (datetime.now(timezone.utc) + timedelta(hours=9)).date().isoformat(), max_age_days)
             break

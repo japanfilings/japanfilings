@@ -42,7 +42,7 @@ export async function submit(env: ContactEnv, form: Record<string, unknown>, ip:
         from: env.MAIL_FROM,
         to: env.CONTACT_EMAIL,
         reply_to: email,
-        subject: `[japanfilings] ${CONTACT_KINDS[kind]} (${id.slice(0, 8)})`,
+        subject: `[JapanStake] ${CONTACT_KINDS[kind]} (${id.slice(0, 8)})`,
         text: `Kind: ${CONTACT_KINDS[kind]}\nPage: ${page ?? "-"}\nReply to: ${email}\nReceived: ${now.toISOString()}\nID: ${id}\n\n${message}\n`,
       }),
     }).catch(() => null);

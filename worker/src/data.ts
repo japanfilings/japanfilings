@@ -5,7 +5,7 @@ import { INDIVIDUAL, PROPOSALS, filerBlocked, filerFlags, filerHidden, publicCom
 // "free" is an account with no paid plan: it has no API access. Starter is the entry plan.
 export type Plan = "free" | "starter" | "pro" | "business";
 
-const ATTRIBUTION = "Source: EDINET (Financial Services Agency of Japan); processed by japanfilings. Not investment advice.";
+const ATTRIBUTION = "Source: EDINET (Financial Services Agency of Japan); processed by JapanStake. Not investment advice.";
 
 // TSE 33-sector names in English (JPX's official English names).
 export const INDUSTRY_EN: Record<string, string> = {

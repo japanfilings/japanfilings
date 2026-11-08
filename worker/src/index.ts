@@ -550,7 +550,7 @@ const p = (name: string) => ({ name, in: "path", required: true });
 
 const OPENAPI = {
   openapi: "3.1.0",
-  info: { title: "japanfilings API", version: "0.4.0", description: "Japanese listed-company data from EDINET, in English." },
+  info: { title: "JapanStake API", version: "0.4.0", description: "Japanese listed-company data from EDINET, in English." },
   components: { securitySchemes: { bearer: { type: "http", scheme: "bearer" } } },
   security: [{ bearer: [] }],
   paths: {

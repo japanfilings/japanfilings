@@ -1,4 +1,4 @@
-# japanfilings デプロイと運用
+# JapanStake デプロイと運用
 
 対象: データパイプラインの無人運転。配信は Cloudflare Workers + D1、取込は GitHub Actions。
 調査日: 2026-10-31(料金と上限)、数値の更新: 2026-11-05(リリース準備監査)。料金と上限は公式ページで確認した値で、文末の[出典](#出典)に番号で対応します。
@@ -50,7 +50,7 @@ Cloudflare D1 ◀── Workers(API・サイト)   watchdog.yml が /v1/status �
 
 ### 2.0 個人情報を出さないための設定(最初に)
 
-- **workers.dev のサブドメイン**: Cloudflare が最初に提案する名前はメールアドレス由来のことがあります。`japanfilings` など中立な名前にしてから Worker を作成します。
+- **workers.dev のサブドメイン**: Cloudflare が最初に提案する名前はメールアドレス由来のことがあります。`japanstake` など中立な名前にしてから Worker を作成します。
 - **GitHub**: ユーザー名は本名やメールと無関係なものにします。Settings → Emails で「Keep my email addresses private」と「Block command line pushes that expose my email」を有効にします。
 - **コミットの作成者**: このリポジトリだけ、作成者を GitHub の noreply アドレスにします(全体設定は個人の Gmail のため、そのままだと公開履歴に残ります)。
   ```

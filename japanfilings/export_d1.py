@@ -422,7 +422,7 @@ def _delta_main(argv):
 
 def new_key(plan, customer_ref=None):
     assert plan in ("free", "starter", "pro", "business"), plan
-    key = "jf_" + secrets.token_urlsafe(32)
+    key = "jsk_" + secrets.token_urlsafe(32)
     h = hashlib.sha256(key.encode()).hexdigest()
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     sql = (f"INSERT INTO api_keys (key_hash, plan, customer_ref, created_at) "

@@ -1,6 +1,6 @@
 // Webhook subscriptions for ownership-change events, delivered by the cron trigger.
 // Each POST body is {"events": [...]} signed as Stripe does: header
-//   X-JapanFilings-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>" with the subscription secret>
+//   X-JapanStake-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>" with the subscription secret>
 import { EVENT_TYPES } from "./data";
 import { filerFlags, publicEvent, publicEventType, storedEventType } from "./privacy";
 
@@ -193,8 +193,8 @@ export async function post(w: any, events: unknown[]) {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "user-agent": "japanfilings-webhooks/1",
-      "x-japanfilings-signature": `t=${t},v1=${await hmacHex(w.secret, `${t}.${body}`)}`,
+      "user-agent": "japanstake-webhooks/1",
+      "x-japanstake-signature": `t=${t},v1=${await hmacHex(w.secret, `${t}.${body}`)}`,
     },
     body,
     redirect: "manual",

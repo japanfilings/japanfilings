@@ -141,8 +141,8 @@ const AUTHZ_FIELDS = ["client_id", "redirect_uri", "response_type", "code_challe
 
 function consentPage(user: User, req: AuthzRequest, fields: Record<string, string | undefined>) {
   const host = new URL(req.redirectUri).host;
-  return page("Allow access?", `<h1>Allow access to japanfilings?</h1>
-<p><strong>${esc(req.clientName)}</strong> asks to use japanfilings tools as <strong>${esc(user.email)}</strong>.</p>
+  return page("Allow access?", `<h1>Allow access to JapanStake?</h1>
+<p><strong>${esc(req.clientName)}</strong> asks to use JapanStake tools as <strong>${esc(user.email)}</strong>.</p>
 <p>After you allow it, you return to <span class="host">${esc(host)}</span>.</p>
 ${req.registeredLoopbackOnly ? `<p class="warn">This application receives access on your own computer. Any program there could claim this name, so allow it only if you just started the connection yourself.</p>` : ""}
 <p>The name above is provided by the application and is not verified by us. Compare the address with the service you are connecting.</p>
@@ -216,7 +216,7 @@ for (const path of ["/.well-known/*", "/oauth/token", "/oauth/register", "/oauth
 }
 
 const protectedResource = (c: any) =>
-  c.json({ resource: resourceOf(c.env, c.req.url), authorization_servers: [issuerOf(c.env, c.req.url)], scopes_supported: [SCOPE], bearer_methods_supported: ["header"], resource_name: "japanfilings" });
+  c.json({ resource: resourceOf(c.env, c.req.url), authorization_servers: [issuerOf(c.env, c.req.url)], scopes_supported: [SCOPE], bearer_methods_supported: ["header"], resource_name: "JapanStake" });
 oauthRoutes.get("/.well-known/oauth-protected-resource", protectedResource);
 oauthRoutes.get("/.well-known/oauth-protected-resource/mcp", protectedResource);
 

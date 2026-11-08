@@ -103,7 +103,7 @@ export async function latestFilings(db: D1Database, opts: { ticker?: string; sin
   const { results } = await db.prepare(`${FEED_SQL}WHERE (?1 IS NULL OR s.first_seen_at >= ?1) AND (?2 IS NULL OR f.ticker = ?2 OR i.ticker = ?2) ORDER BY s.first_seen_at DESC, s.doc_id DESC LIMIT ?3`)
     .bind(opts.since ?? null, opts.ticker?.toUpperCase() ?? null, opts.limit).all();
   const p = await db.prepare("SELECT MAX(polled_at) AS at FROM filing_poll_state").first<{ at: string | null }>();
-  return { data: results.map(publicFiling), list_checked_at: p?.at ?? null, notes: "Metadata from EDINET's documents list as soon as it is seen. Parsed contents follow from the ingest.", attribution: "Source: EDINET (Financial Services Agency of Japan); processed by japanfilings. Not investment advice." };
+  return { data: results.map(publicFiling), list_checked_at: p?.at ?? null, notes: "Metadata from EDINET's documents list as soon as it is seen. Parsed contents follow from the ingest.", attribution: "Source: EDINET (Financial Services Agency of Japan); processed by JapanStake. Not investment advice." };
 }
 
 /** Subscribers opt in with types: ["filing"]. The cursor moves only after a 2xx. */

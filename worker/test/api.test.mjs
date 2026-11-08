@@ -55,7 +55,7 @@ test("pro plan: investor lookup returns the filing", async () => {
 
 test("MCP: initialize, list tools, call a tool", async () => {
   const init = await (await mcp(process.env.PRO_KEY, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} })).json();
-  assert.equal(init.result.serverInfo.name, "japanfilings");
+  assert.equal(init.result.serverInfo.name, "japanstake");
   assert.equal((await mcp(process.env.PRO_KEY, { jsonrpc: "2.0", method: "notifications/initialized" })).status, 202);
   const list = await (await mcp(process.env.PRO_KEY, { jsonrpc: "2.0", id: 2, method: "tools/list" })).json();
   const toolNames = list.result.tools.map((t) => t.name);
@@ -109,13 +109,13 @@ test("sign up by email link, create a key, use it", async () => {
   const dash = await fetch(BASE + "/dashboard", { headers: { cookie } });
   assert.match(await dash.text(), new RegExp(email.replace(".", "\\.")));
   const created = await fetch(BASE + "/dashboard/key", { method: "POST", headers: { cookie, origin: BASE } });
-  const key = (await created.text()).match(/<pre>(jf_[^<]+)<\/pre>/)?.[1];
+  const key = (await created.text()).match(/<pre>(jsk_[^<]+)<\/pre>/)?.[1];
   assert.ok(key, "new key shown once");
   assert.equal((await get("/v1/companies/4042", key)).status, 200);
   const crossSite = await fetch(BASE + "/dashboard/key", { method: "POST", headers: { cookie, origin: "https://evil.example" } });
   assert.equal(crossSite.status, 403);
   const rotated = await (await fetch(BASE + "/dashboard/key", { method: "POST", headers: { cookie, origin: BASE } })).text();
-  assert.ok(rotated.includes("jf_"));
+  assert.ok(rotated.includes("jsk_"));
   assert.equal((await get("/v1/companies/4042", key)).status, 401, "old key revoked after rotation");
 });
 

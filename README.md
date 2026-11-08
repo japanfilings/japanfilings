@@ -1,4 +1,4 @@
-# japanfilings (working name)
+# JapanStake
 
 Japanese listed-company data from official filings, in English, for AI agents (MCP) and developers.
 
@@ -72,7 +72,7 @@ FREE_KEY=... PRO_KEY=... BASE=http://localhost:8788 npm test
 Claude Code against the remote MCP:
 
 ```bash
-claude mcp add --transport http japanfilings https://<your-worker>/mcp --header "Authorization: Bearer <key>"
+claude mcp add --transport http japanstake https://<your-worker>/mcp --header "Authorization: Bearer <key>"
 ```
 
 ## Deploy (owner steps, all free tiers)

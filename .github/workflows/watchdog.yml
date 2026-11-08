@@ -1,4 +1,4 @@
-# Fails, and so emails the owner, when the public data goes stale or ingest stops succeeding.
+# Fails, and so emails the owner, when the public data goes stale, ingest stops succeeding or R2 grows past 5 GB.
 # Variable: STATUS_URL, e.g. https://japanfilings.example.workers.dev/v1/status
 name: watchdog
 
@@ -48,6 +48,30 @@ jobs:
           age=$(( ($(date +%s) - $(date -d "$last" +%s)) / 3600 ))
           echo "last success $last ($age hours ago)"
           [ "$age" -le 30 ] || { echo "::error::ingest last succeeded $age hours ago"; exit 1; }
+      # R2 is free up to 10 GB. Backups use fixed, overwritten names (about 4 GB at most), so anything over
+      # 5 GB means something is wrong: fail, and so email the owner, long before a charge.
+      - name: R2 backups stay inside the free tier
+        id: r2
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_BUCKET: japanfilings-backups
+          R2_MAX_BYTES: "5368709120"
+        run: |
+          total=0; n=0; cursor=""
+          while :; do
+            page=$(curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets/$R2_BUCKET/objects?per_page=1000${cursor:+&cursor=$cursor}")
+            [ "$(jq -r .success <<< "$page")" = true ] || { echo "::error::could not list the R2 bucket"; exit 1; }
+            total=$(( total + $(jq '[.result[].size] | add // 0' <<< "$page") ))
+            n=$(( n + $(jq '.result | length' <<< "$page") ))
+            cursor=$(jq -r '.result_info.cursor // empty' <<< "$page")
+            [ -n "$cursor" ] && [ "$(jq -r '.result_info.is_truncated // false' <<< "$page")" = true ] || break
+          done
+          echo "R2: $n objects, $(( total / 1048576 )) MB (limit $(( R2_MAX_BYTES / 1048576 )) MB)"
+          echo "R2 backups: $n objects, $(( total / 1048576 )) MB" >> "$GITHUB_STEP_SUMMARY"
+          [ "$total" -le "$R2_MAX_BYTES" ] || { echo "::error::R2 holds $(( total / 1048576 )) MB, over the 5 GB alarm (free tier 10 GB). See docs/DEPLOY.md."; exit 1; }
       # GitHub disables schedules in a public repository after 60 days with no activity.
       - name: Keep the schedules alive
         id: keepalive

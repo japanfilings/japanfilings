@@ -21,7 +21,7 @@ async function signIn() {
 async function freshKey() {
   const { cookie } = await signIn();
   const html = await (await fetch(BASE + "/dashboard/key", { method: "POST", headers: { cookie, origin: BASE } })).text();
-  return html.match(/<pre>(jf_[^<]+)<\/pre>/)[1];
+  return html.match(/<pre>(jsk_[^<]+)<\/pre>/)[1];
 }
 
 const FREE = await freshKey();
@@ -334,7 +334,7 @@ test("OAuth full flow: token works on MCP only, no secrets stored in clear", { s
   assert.equal(g.tokens.token_type, "Bearer");
   assert.equal(g.tokens.expires_in, 3600);
   const init = await (await rpc(g.tokens.access_token, "initialize", {})).json();
-  assert.equal(init.result.serverInfo.name, "japanfilings");
+  assert.equal(init.result.serverInfo.name, "japanstake");
   assert.equal(JSON.parse((await (await rpc(g.tokens.access_token, "tools/call", { name: "get_my_usage", arguments: {} })).json()).result.content[0].text).plan, "starter");
   assert.equal((await get("/v1/companies/7203", g.tokens.access_token)).status, 401, "not a REST credential");
   const bad = await rpc("jfo_wrong", "ping");
@@ -393,7 +393,7 @@ test("OAuth refresh rotates; reuse revokes the grant; revoke and withdrawal work
 test("OAuth token and API key share one account's monthly count", { skip: !oauthOn }, async () => {
   const g = await fullGrant();
   const html = await (await fetch(BASE + "/dashboard/key", { method: "POST", headers: { cookie: g.cookie, origin: BASE } })).text();
-  const key = html.match(/<pre>(jf_[^<]+)<\/pre>/)[1];
+  const key = html.match(/<pre>(jsk_[^<]+)<\/pre>/)[1];
   const before = (await (await get("/v1/usage", key)).json()).requests_used;
   await rpc(g.tokens.access_token, "ping");
   const after = (await (await get("/v1/usage", key)).json()).requests_used;

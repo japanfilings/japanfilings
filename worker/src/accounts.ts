@@ -39,8 +39,8 @@ export async function startLogin(env: AccountEnv, email: string, origin: string)
       body: JSON.stringify({
         from: env.MAIL_FROM,
         to: email,
-        subject: "Your japanfilings sign-in link",
-        text: `Sign in to japanfilings (valid for ${LINK_TTL_MIN} minutes):\n\n${link}\n\nIf you did not request this, ignore this email.`,
+        subject: "Your JapanStake sign-in link",
+        text: `Sign in to JapanStake (valid for ${LINK_TTL_MIN} minutes):\n\n${link}\n\nIf you did not request this, ignore this email.`,
       }),
     });
     return { sent: res.ok };
@@ -89,7 +89,7 @@ export async function endSession(env: AccountEnv, session: string | undefined) {
 
 /** Revokes the user's keys and issues a new one. The plain key is returned once and never stored. */
 export async function rotateKey(env: AccountEnv, user: User): Promise<string> {
-  const key = "jf_" + randomToken(32);
+  const key = "jsk_" + randomToken(32);
   await env.DB.batch([
     env.DB.prepare("UPDATE api_keys SET revoked = 1 WHERE user_id = ?1").bind(user.id),
     env.DB.prepare("INSERT INTO api_keys (key_hash, plan, user_id, key_prefix, created_at) VALUES (?1, ?2, ?3, ?4, ?5)").bind(

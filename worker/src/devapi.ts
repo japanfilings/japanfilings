@@ -175,7 +175,7 @@ const summaryOf = (path: string, op: any): string => INDICATOR_SUMMARIES[path] ?
 const INTRO = (origin: string) =>
   `Japan ownership and activism data from public filings on EDINET, in English, as a REST API and an MCP server: 5% stakes and stated proposal intentions, tender offers, shareholder votes, disclosed trades, cross-shareholdings, plus company financials. Factual data, not investment advice. No stock prices: join your own with the FIGI or ticker symbols on each company. Two paid plans with every feature: Starter $9 a month (20,000 requests) and Pro $39 (300,000); a key without a plan gets HTTP 402.\n\n` +
   `- Base URL: ${origin}\n- Authentication: Authorization: Bearer <key>; keys at ${origin}/login\n- MCP: ${origin}/mcp (Streamable HTTP)\n- OpenAPI: ${origin}/openapi.json\n- Documentation: ${origin}/docs\n` +
-  `- List endpoints accept format=csv. Data responses carry X-Data-As-Of.\n- Source credit is required when redistributing: Source: EDINET (Financial Services Agency of Japan); processed by japanfilings.\n`;
+  `- List endpoints accept format=csv. Data responses carry X-Data-As-Of.\n- Source credit is required when redistributing: Source: EDINET (Financial Services Agency of Japan); processed by JapanStake.\n`;
 
 export function llmsTxt(spec: Spec, origin: string) {
   const lines = Object.entries(spec.paths).flatMap(([path, ops]) =>

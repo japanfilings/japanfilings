@@ -52,7 +52,7 @@ async function signIn() {
 const form = (cookie, path, fields = {}) =>
   fetch(BASE + path, { method: "POST", redirect: "manual", headers: { cookie, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(fields) });
 async function newKey(cookie) {
-  return (await (await form(cookie, "/dashboard/key")).text()).match(/jf_[A-Za-z0-9_-]+/)[0];
+  return (await (await form(cookie, "/dashboard/key")).text()).match(/jsk_[A-Za-z0-9_-]+/)[0];
 }
 // "none": no plan (HTTP 402); otherwise the plan /v1/usage reports (features are the same on every plan).
 const planOf = async (key) => {

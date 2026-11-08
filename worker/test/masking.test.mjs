@@ -246,7 +246,7 @@ test("webhooks: cron delivery and test send", async () => {
   const real = globalThis.fetch;
   globalThis.fetch = async (u, init) => {
     if (String(u).startsWith("https://cloudflare-dns.com/")) return Response.json({ Status: 0, Answer: String(u).includes("type=A%20") ? [] : [{ type: 1, data: "93.184.216.34" }] });
-    sent.push({ body: String(init?.body ?? ""), redirect: init?.redirect, signature: init?.headers?.["x-japanfilings-signature"] });
+    sent.push({ body: String(init?.body ?? ""), redirect: init?.redirect, signature: init?.headers?.["x-japanstake-signature"] });
     return new Response("ok");
   };
   try {
