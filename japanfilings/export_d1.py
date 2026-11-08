@@ -164,6 +164,7 @@ def open_state(path, init=False):
     con.executescript("""
         CREATE TABLE IF NOT EXISTS row_hash (tbl TEXT, key TEXT, hash TEXT, PRIMARY KEY (tbl, key)) WITHOUT ROWID;
         CREATE TABLE IF NOT EXISTS writes (day TEXT PRIMARY KEY, n INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS withheld_rows (tbl TEXT PRIMARY KEY, n INTEGER NOT NULL);
     """)
     return con
 
@@ -280,9 +281,11 @@ def delta(con, state, out_dir, tables=None, daily_cap=DEFAULT_DAILY_CAP, allow_m
         known = dict(state.execute("SELECT key, hash FROM row_hash WHERE tbl = ?", (t,)))
         before = len(known)
         s = summary[t] = {"rows": 0, "new": 0, "changed": 0, "deleted": 0, "deferred": 0, "writes": 0}
+        withheld = 0
         for raw in con.execute(f"SELECT {','.join(cols)} FROM {t}"):
             row = _export_row(t, cols, raw, m)
             if row is None:  # stays in `known`, so a copy already in D1 is deleted
+                withheld += 1
                 continue
             s["rows"] += 1
             key = json.dumps([row[cols.index(k)] for k in keys], ensure_ascii=False)
@@ -297,6 +300,9 @@ def delta(con, state, out_dir, tables=None, daily_cap=DEFAULT_DAILY_CAP, allow_m
             budget -= per_row
             s["writes"] += per_row
             chunks.add(_upsert_sql(t, cols, keys, has_pk, row), [t, key, h], per_row)
+        # Rows never sent on purpose, so the run record does not count them as waiting (refresh._unsent).
+        with state:
+            state.execute("INSERT OR REPLACE INTO withheld_rows VALUES (?, ?)", (t, withheld))
         gone = len(known)
         if before and not s["rows"]:
             refused.append(f"{t}: the store has no rows but D1 has {before}")

@@ -453,7 +453,12 @@ def _unsent(state_path, con, table):
         return 0
     st = sqlite3.connect(f"file:{state_path}?mode=ro", uri=True)
     try:
-        return con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] - st.execute("SELECT COUNT(*) FROM row_hash WHERE tbl = ?", (table,)).fetchone()[0]
+        sent = st.execute("SELECT COUNT(*) FROM row_hash WHERE tbl = ?", (table,)).fetchone()[0]
+        try:  # rows the export leaves out on purpose are never sent
+            withheld = (st.execute("SELECT n FROM withheld_rows WHERE tbl = ?", (table,)).fetchone() or (0,))[0]
+        except sqlite3.OperationalError:
+            withheld = 0
+        return con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] - sent - withheld
     except sqlite3.Error:
         return 0
     finally:

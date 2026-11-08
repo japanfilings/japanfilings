@@ -97,6 +97,19 @@ def test_publish_keeps_old_success_while_rows_are_unsent(con, tmp_path):
     assert line.split("VALUES (")[1].split(",")[2] == "NULL"  # last_success_at
 
 
+def test_publish_ignores_rows_withheld_on_purpose(con, tmp_path):
+    refresh.record_run(con, "range", None)
+    con.execute("INSERT INTO large_holdings VALUES ('A','7203','E1','2026-10-20','{}')")
+    state = tmp_path / "s.db"
+    s = sqlite3.connect(state)
+    s.execute("CREATE TABLE row_hash (tbl TEXT, key TEXT, hash TEXT)")
+    s.execute("CREATE TABLE withheld_rows (tbl TEXT PRIMARY KEY, n INTEGER NOT NULL)")
+    s.execute("INSERT INTO withheld_rows VALUES ('large_holdings', 1)"); s.commit(); s.close()
+    stmts, _ = refresh.publish_sql(con, str(state), today="2026-10-21")
+    line = next(x for x in stmts if "'large_holdings'" in x)
+    assert line.split("VALUES (")[1].split(",")[2] != "NULL"
+
+
 def test_ci_check_fails_on_late():
     p = {"data": [{"dataset": "a", "status": "fresh"}, {"dataset": "b", "status": "late", "status_reasons": ["run_overdue"]}, {"dataset": "c", "status": "failed"}]}
     assert len(refresh.problems(p)) == 2
