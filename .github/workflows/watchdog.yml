@@ -1,0 +1,69 @@
+# Fails, and so emails the owner, when the public data goes stale or ingest stops succeeding.
+# Variable: STATUS_URL, e.g. https://japanfilings.example.workers.dev/v1/status
+name: watchdog
+
+on:
+  schedule:
+    - cron: "41 0,6,12,18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write  # for the keep-alive commit
+  actions: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Public data is fresh
+        id: status
+        continue-on-error: true
+        env:
+          STATUS_URL: ${{ vars.STATUS_URL }}
+        run: |
+          [ -n "$STATUS_URL" ] || { echo "::error::Set the STATUS_URL repository variable."; exit 1; }
+          python -m japanfilings.cli check-freshness "$STATUS_URL" --max-age-days 5
+      - name: Every dataset is within its target
+        id: datasets
+        continue-on-error: true
+        env:
+          STATUS_URL: ${{ vars.STATUS_URL }}
+        run: python -m japanfilings.refresh check "$STATUS_URL"
+      - name: Ingest succeeded in the last 30 hours
+        id: ingest
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          last=$(gh run list --workflow ingest.yml --status success --limit 1 --json updatedAt --jq '.[0].updatedAt // empty')
+          [ -n "$last" ] || { echo "::error::ingest has never succeeded"; exit 1; }
+          age=$(( ($(date +%s) - $(date -d "$last" +%s)) / 3600 ))
+          echo "last success $last ($age hours ago)"
+          [ "$age" -le 30 ] || { echo "::error::ingest last succeeded $age hours ago"; exit 1; }
+      # GitHub disables schedules in a public repository after 60 days with no activity.
+      - name: Keep the schedules alive
+        id: keepalive
+        continue-on-error: true
+        run: |
+          age=$(( ($(date +%s) - $(git log -1 --format=%ct)) / 86400 ))
+          if [ "$age" -ge 45 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "chore: keep scheduled workflows active [skip ci]"
+            git push
+          fi
+      - name: Fail the run if any check failed
+        if: always()
+        env:
+          STEPS: ${{ toJSON(steps) }}
+        run: |
+          failed=$(jq -r '[to_entries[] | select(.value.outcome == "failure") | .key] | join(", ")' <<< "$STEPS")
+          [ -z "$failed" ] || { echo "::error::Failed: $failed"; exit 1; }

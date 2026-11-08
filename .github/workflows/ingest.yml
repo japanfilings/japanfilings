@@ -1,0 +1,477 @@
+# Keeps the SQLite store current and sends what changed to Cloudflare D1. Setup: docs/DEPLOY.md.
+# Secrets: EDINET_API_KEY, CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, SEC_USER_AGENT, BACKUP_PASSPHRASE, LEXICON_JSON.
+# LEXICON_JSON is given to every step that runs `python -m japanfilings` (cli, export_d1 and refresh load the
+# word lists through textindex) and to no action, npm or wrangler step. A new python step needs it in its env.
+# Variables: STATUS_URL (watchdog), D1_DAILY_WRITE_CAP (set 1000000: Workers Paid is required; unset = 80,000 a day),
+# BACKFILL_ENABLED.
+#
+# One writer at a time: every mode shares the concurrency group below and works on one store, so no
+# run can overwrite another's rows. Long reads run at night, when the 10-minute runs are not scheduled.
+#
+# Time: the job limit is 355 minutes. The long collectors share one budget (COLLECT_DEADLINE, set in
+# "Choose the run"); each is cut at min(its own limit, the deadline) and resumes next run. The deadline
+# leaves room for every later step at its full timeout-minutes, so check, D1 push, snapshot, cache and R2
+# backup always get to run. Change a later step's timeout-minutes -> change RESERVE in "Choose the run".
+name: ingest
+
+on:
+  schedule:
+    - cron: "3-53/10 23 * * 0-4"   # fast: 08:03-08:53 JST, Mon-Fri JST
+    - cron: "3-53/10 0-11 * * 1-5" # fast: 09:03-20:53 JST, Mon-Fri JST
+    - cron: "17 12 * * 0-5"        # nightly: 21:17 JST, Sun-Fri
+    - cron: "17 12 * * 6"          # weekly: 21:17 JST Sat (nightly + reference data + account backup)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Which run"
+        type: choice
+        options: [nightly, fast, weekly]
+        default: nightly
+      nport_quarter:
+        description: "SEC N-PORT quarter to load, e.g. 2026q3 (blank = skip)"
+        required: false
+      allow_mass_delete:
+        description: "Send a large deletion the export refused (read docs/DEPLOY.md first)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: store
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write  # to delete old store caches
+
+env:
+  R2_BUCKET: japanfilings-backups
+  R2_MAX_SNAPSHOT_MB: 300
+
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        timeout-minutes: 5
+      - name: Choose the run
+        id: mode
+        timeout-minutes: 1
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUT_MODE: ${{ inputs.mode }}
+        run: |
+          case "$SCHEDULE" in
+            "17 12 * * 0-5") mode=nightly ;;
+            "17 12 * * 6") mode=weekly ;;
+            "") mode="${INPUT_MODE:-nightly}" ;;
+            *) mode=fast ;;
+          esac
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "today=$(TZ=Asia/Tokyo date +%F)" >> "$GITHUB_OUTPUT"
+          echo "yesterday=$(TZ=Asia/Tokyo date -d yesterday +%F)" >> "$GITHUB_OUTPUT"
+          echo "week_ago=$(TZ=Asia/Tokyo date -d '7 days ago' +%F)" >> "$GITHUB_OUTPUT"
+
+          # RESERVE = the timeout-minutes of every step after the collectors (indicators 11, refresh_queue 25,
+          # check 10, export 15, push 60, publish 5, snapshot 10, cache save 10, cache delete 3, backup 15,
+          # final 2 = 166; weekly adds accounts 15) + 9 minutes for checkout, kill grace and runner overhead.
+          # The steps before the budgeted collectors sum to at most 131 minutes, under any deadline below.
+          if [ "$mode" = weekly ]; then reserve=190; else reserve=175; fi
+          deadline=$(( $(date +%s) + (355 - reserve) * 60 ))
+          echo "COLLECT_DEADLINE=$deadline" >> "$GITHUB_ENV"
+          echo "BUDGET_SH=$RUNNER_TEMP/budget.sh" >> "$GITHUB_ENV"
+          echo "Collectors stop by $(TZ=Asia/Tokyo date -d "@$deadline" '+%H:%M JST') (budget $((355 - reserve)) min)." >> "$GITHUB_STEP_SUMMARY"
+          cat > "$RUNNER_TEMP/budget.sh" <<'SH'
+          # budget SECONDS CMD...: runs CMD under `timeout` for min(SECONDS, time left before COLLECT_DEADLINE).
+          #   Returns 124 when CMD was cut, or was not started because under 5 minutes were left. The collectors
+          #   run this way resume where they stopped, so their steps accept 124.
+          # budget_minutes MINUTES: min(MINUTES, minutes left - 5), at least 1, for jobs that stop themselves.
+          budget() {
+            local own=$1 left t rc=0
+            shift
+            left=$(( COLLECT_DEADLINE - $(date +%s) ))
+            if [ "$left" -lt 300 ]; then
+              echo "::warning::Time budget used up; left for the next run: $*"
+              echo "Skipped for lack of time: $*" >> "$GITHUB_STEP_SUMMARY"
+              return 124
+            fi
+            t=$(( own < left ? own : left ))
+            timeout -k 60 "$t" "$@" || rc=$?
+            # 137: still running 60 s after the TERM, so timeout sent KILL. Same meaning as 124.
+            [ "$rc" != 137 ] || rc=124
+            return "$rc"
+          }
+          budget_minutes() {
+            local m=$(( (COLLECT_DEADLINE - $(date +%s)) / 60 - 5 ))
+            [ "$m" -lt "$1" ] || m=$1
+            [ "$m" -ge 1 ] || m=1
+            echo "$m"
+          }
+          SH
+      - uses: actions/setup-python@v5
+        timeout-minutes: 5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        timeout-minutes: 5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      # The ingest needs only the standard library and pdftotext.
+      - run: sudo apt-get install -y --no-install-recommends poppler-utils
+        timeout-minutes: 10
+
+      # ---------- restore: cache, then R2, else stop. Never run on an empty store. ----------
+      - uses: actions/cache/restore@v4
+        timeout-minutes: 15
+        with:
+          path: data/snapshot.tar.gz
+          key: store-${{ github.run_id }}
+          restore-keys: store-
+      - name: Restore the store
+        id: restore
+        timeout-minutes: 25
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -f data/snapshot.tar.gz ] && python -m japanfilings.cli restore data/snapshot.tar.gz; then
+            echo "Store restored from the Actions cache."
+            exit 0
+          fi
+          echo "::warning::No usable cache; restoring from R2."
+          mkdir -p data
+          (cd worker && npm ci --no-audit --no-fund && npx wrangler r2 object get "$R2_BUCKET/latest.tar.gz" --remote --file ../data/r2.tar.gz) \
+            && python -m japanfilings.cli restore data/r2.tar.gz \
+            || { echo "::error::No store in the cache or R2. Stopping; see the restore section of docs/DEPLOY.md."; exit 1; }
+
+      # ---------- ingest: each source may fail alone; the final step reports it ----------
+      # Exit 124 means the time budget ran out: every job here resumes where it stopped, so that is not a failure.
+      # Short fixed-length steps come first (they always finish before the deadline); then the budgeted collectors.
+      # Their own `timeout` is only a guard against a hang, so a 124 there is a failure and is reported.
+      - name: Fast - today's filings
+        id: fast_filings
+        if: steps.mode.outputs.mode == 'fast'
+        timeout-minutes: 8
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+          FROM: ${{ steps.mode.outputs.yesterday }}
+          TO: ${{ steps.mode.outputs.today }}
+        run: |
+          rc=0; timeout 300 python -m japanfilings.cli range "$FROM" "$TO" || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ] || exit "$rc"
+          rc=0; timeout 120 python -m japanfilings.cli annual "$FROM" "$TO" || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+      - name: Nightly - filings of the last 7 days (catches up after an outage)
+        id: catch_up
+        if: steps.mode.outputs.mode != 'fast'
+        # Two budgeted commands: 20 + 10 minutes, each up to 1 more before KILL, plus start-up.
+        timeout-minutes: 34
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+          FROM: ${{ steps.mode.outputs.week_ago }}
+          TO: ${{ steps.mode.outputs.today }}
+        run: |
+          . "$BUDGET_SH"
+          rc=0; budget 1200 python -m japanfilings.cli range "$FROM" "$TO" || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ] || exit "$rc"
+          rc=0; budget 600 python -m japanfilings.cli annual "$FROM" "$TO" || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+      - name: Weekly - code list
+        id: reference
+        if: steps.mode.outputs.mode == 'weekly'
+        timeout-minutes: 10
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+        run: timeout 540 python -m japanfilings.cli codelist
+      - name: Nightly - investor groups
+        id: investors
+        if: steps.mode.outputs.mode != 'fast'
+        timeout-minutes: 11
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+        run: timeout 600 python -m japanfilings.cli investors
+      - name: Weekly - FIGI
+        id: figi
+        if: steps.mode.outputs.mode == 'weekly'
+        timeout-minutes: 32
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+        run: |
+          . "$BUDGET_SH"
+          rc=0; budget 1800 python -m japanfilings.cli figi || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+      - name: Nightly - buyback reports
+        id: buybacks
+        if: steps.mode.outputs.mode != 'fast'
+        timeout-minutes: 32
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+        run: |
+          . "$BUDGET_SH"
+          rc=0; budget 1800 python -m japanfilings.cli buybacks || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+      - name: Nightly - internal control and auditor changes
+        id: governance
+        if: steps.mode.outputs.mode != 'fast'
+        timeout-minutes: 32
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+        run: |
+          . "$BUDGET_SH"
+          rc=0; budget 1800 python -m japanfilings.cli governance || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+      - name: Nightly - annual-report details
+        id: filing_details
+        if: steps.mode.outputs.mode != 'fast'
+        timeout-minutes: 32
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+        run: |
+          . "$BUDGET_SH"
+          rc=0; budget 1800 python -m japanfilings.cli filing-details --network || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+      - name: Nightly - shareholder voting results
+        id: voting
+        if: steps.mode.outputs.mode != 'fast'
+        timeout-minutes: 32
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+        run: |
+          . "$BUDGET_SH"
+          rc=0; budget 1800 python -m japanfilings.cli voting --network || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+      - name: Nightly - tender offers
+        id: tender_offers
+        if: steps.mode.outputs.mode != 'fast'
+        timeout-minutes: 32
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+        run: |
+          . "$BUDGET_SH"
+          rc=0; budget 1800 python -m japanfilings.cli tender-offers --network || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+      - name: Nightly - credit ratings in bond filings
+        id: ratings
+        if: steps.mode.outputs.mode != 'fast'
+        timeout-minutes: 22
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+        run: |
+          . "$BUDGET_SH"
+          rc=0; budget 1200 python -m japanfilings.cli ratings || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+      - name: Nightly - half-year results
+        id: halfyear
+        if: steps.mode.outputs.mode != 'fast'
+        timeout-minutes: 22
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+        run: |
+          . "$BUDGET_SH"
+          rc=0; budget 1200 python -m japanfilings.cli halfyear || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+      - name: History of 5% reports (only with the BACKFILL_ENABLED variable set to 1)
+        id: backfill
+        if: steps.mode.outputs.mode != 'fast' && vars.BACKFILL_ENABLED == '1'
+        timeout-minutes: 57
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+        run: |
+          . "$BUDGET_SH"
+          rc=0; budget 3300 python -m japanfilings.backfill run --minutes "$(budget_minutes 50)" --no-csv-cache || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+      - name: U.S. fund holdings (SEC N-PORT)
+        id: nport
+        if: inputs.nport_quarter != ''
+        timeout-minutes: 180
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          QUARTER: ${{ inputs.nport_quarter }}
+        # A cut load is reported as a failure (124): run it again, ideally with mode=fast so it gets the whole budget.
+        run: |
+          . "$BUDGET_SH"
+          budget 10620 python -m japanfilings.cli nport "$QUARTER"  # 177 min + 1 before KILL, under timeout-minutes
+      - name: Nightly - reconcile with EDINET's list
+        id: reconcile
+        if: steps.mode.outputs.mode != 'fast'
+        timeout-minutes: 37
+        continue-on-error: true
+        env:  # reconcile reads EDINET only; D1 is written by the push and publish steps
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+        run: |
+          . "$BUDGET_SH"
+          rc=0; budget 2100 python -m japanfilings.refresh reconcile --minutes "$(budget_minutes 30)" || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+
+      # ---------- after the deadline: fixed timeouts, all counted in RESERVE ----------
+      - name: Nightly - indicators
+        id: indicators
+        if: steps.mode.outputs.mode != 'fast'
+        timeout-minutes: 11
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+        run: timeout 600 python -m japanfilings.cli indicators
+      - name: The refresh queue
+        id: refresh_queue
+        timeout-minutes: 25
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: |
+          if [ "$MODE" = weekly ]; then timeout 600 python -m japanfilings.refresh listings; fi
+          rc=0; timeout 720 python -m japanfilings.refresh run --minutes 10 || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+
+      # ---------- check, then send. A damaged store sends nothing and is not saved. ----------
+      - name: Check the store
+        id: check
+        if: always() && steps.restore.outcome == 'success'
+        timeout-minutes: 10
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+        run: python -m japanfilings.cli store-check
+      - name: Find changed rows
+        id: export
+        if: always() && steps.check.outcome == 'success'
+        timeout-minutes: 15
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          D1_DAILY_WRITE_CAP: ${{ vars.D1_DAILY_WRITE_CAP }}
+          PROFILE: ${{ steps.mode.outputs.mode == 'fast' && 'fast' || 'all' }}
+          MASS_DELETE: ${{ inputs.allow_mass_delete && '--allow-mass-delete' || '' }}
+        run: |
+          # shellcheck disable=SC2086
+          python -m japanfilings.export_d1 delta --out-dir data/d1_delta --state data/d1_state.db --profile "$PROFILE" $MASS_DELETE
+      - name: Apply migrations, then send rows to D1
+        id: push
+        if: always() && steps.export.outcome == 'success' && (steps.export.outputs.chunks != '0' || steps.mode.outputs.mode != 'fast')
+        # A cut push is safe: only chunks D1 accepted are recorded, and the snapshot below saves that record.
+        timeout-minutes: 60
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          (cd worker && npm ci --no-audit --no-fund && npx wrangler d1 migrations apply japanfilings --remote)
+          python -m japanfilings.export_d1 push --dir data/d1_delta --state data/d1_state.db
+
+      - name: Publish run records and finished refresh requests
+        id: publish
+        if: always() && steps.export.outcome == 'success' && steps.push.outcome != 'failure'
+        timeout-minutes: 5
+        continue-on-error: true
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python -m japanfilings.refresh publish
+
+      # ---------- save: runs after a failed push too, so chunks already sent are remembered ----------
+      - name: Pack the store and hash state
+        id: snapshot
+        # Not tied to the check above: a check that timed out or failed for another reason must not lose the
+        # run's rows. snapshot runs the same integrity and shrink check itself and refuses a damaged store,
+        # so nothing damaged is cached or backed up; export and push stay tied to the check.
+        if: always() && steps.restore.outcome == 'success'
+        timeout-minutes: 10
+        env:
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}
+        run: python -m japanfilings.cli snapshot data/snapshot.tar.gz
+      - uses: actions/cache/save@v4
+        id: cache_save
+        if: always() && steps.snapshot.outcome == 'success'
+        timeout-minutes: 10
+        with:
+          path: data/snapshot.tar.gz
+          key: store-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Delete older store caches
+        if: always() && steps.snapshot.outcome == 'success'
+        timeout-minutes: 3
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh cache list --key store- --sort created_at --order desc --limit 100 --json id --jq '.[5:][].id' | xargs -r -n1 gh cache delete
+      # R2 must stay inside the free tier (10 GB-month). Objects use fixed names that are overwritten, so the bucket
+      # never holds more than 12 snapshots (7 weekday slots, 4 week slots, latest) + 8 account slots. A snapshot over
+      # R2_MAX_SNAPSHOT_MB is not uploaded at all: 12 x 300 MB + 8 x 50 MB = 4 GB at most (wrangler r2 object put also stops at 315 MB), whatever happens.
+      - name: Back up to R2 (fixed slots, size-capped)
+        id: backup
+        if: always() && steps.snapshot.outcome == 'success' && steps.mode.outputs.mode != 'fast'
+        timeout-minutes: 15
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TODAY: ${{ steps.mode.outputs.today }}
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: |
+          cd worker
+          [ -d node_modules ] || npm ci --no-audit --no-fund
+          size_mb=$(( $(stat -c %s ../data/snapshot.tar.gz) / 1048576 ))
+          if [ "$size_mb" -gt "$R2_MAX_SNAPSHOT_MB" ]; then
+            echo "::error::snapshot is ${size_mb} MB, over the ${R2_MAX_SNAPSHOT_MB} MB cap that keeps R2 free. Not uploaded; see docs/DEPLOY.md."
+            exit 1
+          fi
+          put() { npx wrangler r2 object put "$R2_BUCKET/$1" --remote --file ../data/snapshot.tar.gz >/dev/null; }
+          put "daily/$(date -u -d "$TODAY" +%u).tar.gz"                       # 1..7, overwritten each week
+          if [ "$MODE" = weekly ]; then put "weekly/$(( 10#$(date -u -d "$TODAY" +%V) % 4 )).tar.gz"; fi   # 0..3
+          put latest.tar.gz
+      - name: Weekly - encrypted backup of accounts in D1
+        id: accounts
+        if: always() && steps.mode.outputs.mode == 'weekly'
+        timeout-minutes: 15
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          TODAY: ${{ steps.mode.outputs.today }}
+        run: |
+          [ -n "$BACKUP_PASSPHRASE" ] || { echo "::error::BACKUP_PASSPHRASE is not set"; exit 1; }
+          cd worker
+          [ -d node_modules ] || npm ci --no-audit --no-fund
+          # Emails and webhook secrets: encrypted before upload, never printed, never in the cache.
+          umask 077
+          npx wrangler d1 export japanfilings --remote --no-schema --table users --table api_keys --table webhooks --table usage --table billing_subscriptions --table billing_events --table billing_audit --table oauth_clients --table oauth_tokens --output "$RUNNER_TEMP/accounts.sql" >/dev/null
+          openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_PASSPHRASE -in "$RUNNER_TEMP/accounts.sql" -out "$RUNNER_TEMP/accounts.sql.enc"
+          [ "$(stat -c %s "$RUNNER_TEMP/accounts.sql.enc")" -le 52428800 ] || { echo "::error::account backup over 50 MB, not uploaded"; rm -f "$RUNNER_TEMP/accounts.sql" "$RUNNER_TEMP/accounts.sql.enc"; exit 1; }
+          npx wrangler r2 object put "$R2_BUCKET/accounts/$(( 10#$(date -u -d "$TODAY" +%V) % 8 )).sql.enc" --remote --file "$RUNNER_TEMP/accounts.sql.enc" >/dev/null   # 0..7
+          rm -f "$RUNNER_TEMP/accounts.sql" "$RUNNER_TEMP/accounts.sql.enc"
+
+      # A failed run emails the owner (docs/DEPLOY.md). Sources may fail alone above; this makes it visible.
+      - name: Fail the run if any step failed
+        if: always()
+        timeout-minutes: 2
+        env:
+          STEPS: ${{ toJSON(steps) }}
+        run: |
+          failed=$(jq -r '[to_entries[] | select(.value.outcome == "failure") | .key] | join(", ")' <<< "$STEPS")
+          if [ -n "$failed" ]; then
+            echo "::error::Failed steps: $failed"
+            echo "Failed steps: $failed" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

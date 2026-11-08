@@ -1,0 +1,19 @@
+.venv/
+.cache/
+.pytest_cache/
+__pycache__/
+.DS_Store
+.env
+
+# data/ holds the store, local API keys and caches. CI gets the store from its snapshot.
+data/*
+japanfilings/private/
+
+# Bundles left by a build run without an out dir (esbuild wrote worker/undefined/p.mjs once).
+worker/undefined/
+worker/dist/
+# Owner-only planning and the unreviewed legal draft stay out of the public repository.
+docs/LAUNCH_CHECKLIST_JA.md
+docs/RELEASE_BOARD.md
+docs/TERMS_PAID_DRAFT_JA.md
+docs/OWNER_TASKS_JA.md

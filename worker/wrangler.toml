@@ -1,0 +1,14 @@
+name = "japanfilings-api"
+main = "src/index.ts"
+workers_dev = true  # account subdomain is "japanfilings" (neutral); never one that identifies the owner
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "japanfilings"
+# Replace with the ID from `wrangler d1 create japanfilings` before deploying.
+database_id = "1f42ad71-cb75-41f1-9c98-98912606efdd"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["*/5 * * * *"]  # webhook delivery
