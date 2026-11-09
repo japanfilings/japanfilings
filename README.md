@@ -89,7 +89,7 @@ Step-by-step commands, costs, failure runbook and update schedule: **[docs/DEPLO
 - Cloudflare: D1 database, R2 bucket `japanfilings-backups` with lifecycle rules, `wrangler deploy`. The first load is about 183,000 rows, 259 MB of SQL and an estimated 755,000 rows written (measured 2026-11-01 on a copy; collection was still running). That is 8 to 10 days on the free plan's 100,000 writes a day, or one run on Workers Paid ($5/month).
 - Secrets for the Worker: `RESEND_API_KEY` and `MAIL_FROM` (sign-in email), `CONTACT_EMAIL` (where contact-form requests are forwarded; never shown on the site), `EDINET_API_KEY`. Do not set `DEV_SHOW_LINKS` in production.
 - GitHub repository (public recommended: free Actions minutes). Secrets: `EDINET_API_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `SEC_USER_AGENT`, `BACKUP_PASSPHRASE`, `LEXICON_JSON`. Variables: `STATUS_URL`, `D1_DAILY_WRITE_CAP`.
-- A domain (optional; `*.workers.dev` works).
+- A domain routed to the Worker (`*.workers.dev` works for a trial; the live site turns it off so the zone rate limit covers every request).
 - Billing: a merchant of record (Paddle or Lemon Squeezy) and a webhook that sets `users.plan` and `api_keys.plan`.
 
 ## Known limits

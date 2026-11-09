@@ -1,6 +1,6 @@
 name = "japanfilings-api"
 main = "src/index.ts"
-workers_dev = true  # account subdomain is "japanfilings" (neutral); never one that identifies the owner
+workers_dev = false  # the site is served only on japanstake.com (the zone's rate limit does not cover workers.dev)
 compatibility_date = "2026-10-01"
 routes = [{ pattern = "japanstake.com", custom_domain = true }]
 
