@@ -1037,9 +1037,9 @@ ${undocumented.length ? `<p class="faint xs">Also in the OpenAPI spec: ${undocum
 </div></div>`, user, { path: "/docs", description: "JapanStake API and MCP documentation: quick start, authentication, every endpoint with a real example, Claude and Cursor setup, webhooks, errors and rate limits." });
 }
 
-function legal(user: User | null, title: string, path: string, html: string, description: string) {
+function legal(user: User | null, title: string, path: string, html: string, description: string, updated = "2026-11-01") {
   return page(`${title} | JapanStake`, `<div class="wrap"><div class="prose" style="padding-block:40px">
-<span class="eyebrow">Last updated 2026-11-01</span><h1>${title}</h1>${html}</div></div>`, user, { path, description });
+<span class="eyebrow">Last updated ${updated}</span><h1>${title}</h1>${html}</div></div>`, user, { path, description });
 }
 
 export function sources(user: User | null) {
@@ -1059,13 +1059,24 @@ export function sources(user: User | null) {
 
 const CONTACT_LINK = `<a href="/contact">Corrections and removal</a>`;
 
-export function terms(user: User | null, contact: string | null) {
+// Paid-plan wording appears once the legal notice is switched on (legalReady), before sales open,
+// so Paddle's review and buyers see the same terms. Keep REFUNDS and CANCELLATION in step with the notice.
+export const PAID_UPDATED = "2026-11-09";
+export const REFUND_TEXT = "Within 14 days of your first purchase, ask through the contact form and we refund it in full, for any reason, once per person or organisation. After that, and for renewals, we do not refund a change of mind or the unused days after a cancellation, because the service starts at once. We do refund duplicate or incorrect charges, a long outage caused by us, and the unused part of a paid plan we discontinue. Refunds are made through Paddle and do not limit your statutory rights.";
+const PAID_TERMS = `<h2>Plans and payment</h2><p>Every plan is paid; an account without a plan cannot use the API. Paddle.com Market Limited is the seller and merchant of record: it takes the payment, issues the receipt and handles VAT or sales tax, and its buyer terms also apply to the purchase. Prices are on the <a href="/pricing">pricing page</a>; the total, with tax, is shown at checkout.</p>
+<h2>Renewal</h2><p>A plan is a monthly subscription. It starts as soon as the payment completes and renews automatically each month, and Paddle charges your payment method at the start of each period, until you cancel.</p>
+<h2>Cancellation</h2><p>Cancel at any time from the billing portal on your dashboard or through the contact form. There is no cancellation fee. The plan stays active until the end of the period already paid for, you are not charged again, and API requests are then refused.</p>
+<h2>Refunds</h2><p>${REFUND_TEXT}</p>
+<h2>Price changes</h2><p>We give at least 30 days' notice, by email or on the dashboard, before a new price applies to your subscription. It applies from the first renewal after the notice, and you can cancel before then.</p>`;
+const UNPAID_TERMS = `<h2>Plans and payment</h2><p>Every plan is paid; an account without a plan cannot use the API. Billing is not connected yet and nothing is charged. Before any paid plan goes on sale, we will update these terms with how payment, renewal and cancellation work.</p>`;
+
+export function terms(user: User | null, contact: string | null, paid = false) {
   return legal(user, "Terms of use", "/terms", `
 <p>These terms apply to the JapanStake website, API and MCP server (the service). By creating an account or using an API key you accept them. They take effect on 2026-11-01.</p>
-<h2>Who runs the service</h2><p>The service is run by an individual business operator. The operator's name and address are given without delay on request, through the contact below. Paid plans are not on sale; the seller will be named here before they are.</p>
+<h2>Who runs the service</h2><p>The service is run by an individual business operator under the name JapanStake. The operator's name and address are given without delay on request, through the contact below.${paid ? " Paid plans are sold by Paddle (see Plans and payment)." : " Paid plans are not on sale; the seller will be named here before they are."}</p>
 <h2>The service</h2><p>JapanStake provides data processed from public filings and other public sources. It is reference information, not investment, legal or tax advice, and not a recommendation about any security. Check important figures against the original source linked from each record.</p>
 <h2>Not advice</h2><p>We do not advise on anyone's individual investment decisions and we do not say what to buy, sell or hold. We publish no share prices. Figures, percentiles and sorted lists are arithmetic on the data. If you use the service to give investment advice, to solicit transactions or in any regulated activity, you are responsible for that activity and for any registration it needs.</p>
-<h2>Accuracy and liability</h2><p>Filings can contain errors, and our processing can too. The data is provided "as is", without any warranty of accuracy, completeness or availability. To the extent the law allows, we are not liable for losses arising from its use. Nothing here limits liability that the law does not allow to be limited. In particular, where you are a consumer, liability for our intent or gross negligence is not excluded, and any other limit applies only as far as the Consumer Contract Act of Japan permits.</p>
+<h2>Accuracy and liability</h2><p>Filings can contain errors, and our processing can too. The data is provided "as is", without any warranty of accuracy, completeness or availability. To the extent the law allows, we are not liable for losses arising from its use. Nothing here limits liability that the law does not allow to be limited. In particular, where you are a consumer, liability for our intent or gross negligence is not excluded, and any other limit applies only as far as the Consumer Contract Act of Japan permits. Otherwise, our total liability for any claim is limited to the fees you paid us in the 12 months before it arose.</p>
 <h2>Your account and key</h2><p>Keep your API key secret. You are responsible for requests made with it. Replace it from the dashboard if it leaks. One person or organisation per account.</p>
 <h2>Acceptable use</h2><ul><li>Stay within your plan's monthly and per-minute limits; do not create extra accounts or keys to get around them.</li>
 <li>Keep the source attribution when you show the data to others, including the EDINET credit as shown on <a href="/sources">Sources and licences</a>.</li>
@@ -1073,16 +1084,16 @@ export function terms(user: User | null, contact: string | null) {
 <li>Do not use the service in breach of the law or of a data source's terms.</li></ul>
 <h2>Redistribution</h2><p>"Raw data" means records from the service, in bulk or substantially whole, in any format. You may use the data in your own analysis and products, show it to your own customers in limited amounts as part of something you add value to, and let your AI products cite or display it with attribution. You may not offer raw data as a feed, a database or an API, to your customers or anyone else.</p>
 <h2>Corrections and stops</h2><p>Anyone, account holder or not, can ask us to correct a record, or to stop showing information about a person. Use ${CONTACT_LINK}. We check the request against the source filing and reply by email.</p>
-<h2>Plans and payment</h2><p>Every plan is paid; an account without a plan cannot use the API. Billing is not connected yet and nothing is charged. Before any paid plan goes on sale, we will update these terms with how payment, renewal and cancellation work.</p>
+${paid ? PAID_TERMS : UNPAID_TERMS}
 <h2>Availability</h2><p>There is no service level commitment. We may suspend the service for maintenance, faults or legal reasons. A data source can change or stop, and a dataset that depends on it can then stop too, without compensation.</p>
 <h2>Ending</h2><p>You may stop at any time and ask us to delete your account. We may suspend or end an account that breaches these terms. You may not use the service if you are subject to sanctions that prohibit us from dealing with you.</p>
 <h2>Rights</h2><p>Rights in source documents stay with their owners. Rights in our software, site and processing stay with the operator. You receive a right to use the service under these terms, nothing more.</p>
 <h2>Changes</h2><p>These terms are standard terms. We may change them where the change benefits users, or is reasonable and fits the purpose of the agreement. We announce the change, its content and its effective date on this page at least 14 days ahead, unless the law or an urgent matter requires less.</p>
 <h2>Law, courts, language</h2><p>Japanese law governs these terms. The courts of Japan have jurisdiction, subject to any mandatory right a consumer has to use their own courts. If a translation differs, the English text prevails. If one clause is invalid, the others stand.</p>
-<h2>Contact</h2><p>Use the <a href="/contact">contact form</a>.</p>`, "Terms of use for the JapanStake website, API and MCP server.");
+<h2>Contact</h2><p>Use the <a href="/contact">contact form</a>.</p>`, "Terms of use for the JapanStake website, API and MCP server.", paid ? PAID_UPDATED : "2026-11-01");
 }
 
-export function privacy(user: User | null, contact: string | null) {
+export function privacy(user: User | null, contact: string | null, paid = false) {
   return legal(user, "Privacy", "/privacy", `
 <p>We collect only the data listed on this page. This page covers people with an account, visitors without one (see Who else handles data and Cookies), and people named in public filings.</p>
 <h2>Who is responsible</h2><p>An individual business operator runs the service. The operator's name and address are given without delay on request, through the contact below.</p>
@@ -1096,13 +1107,13 @@ export function privacy(user: User | null, contact: string | null) {
 <p>You can ask us to correct this or stop showing it: <a href="/contact">Corrections and removal</a>.</p>
 <h2>Your requests</h2><p>You can ask us to disclose, correct, delete or stop using personal data we hold about you, or to stop providing it to third parties. Write to the contact below, saying what the request concerns. We may ask for just enough to confirm it is you, reply by email without delay and charge nothing.</p>
 <h2>Who else handles data</h2><p>We do not sell data. There are no advertising or tracking cookies and no analytics scripts. These providers process data for us, some outside Japan, under their own safeguards:</p>
-<ul><li>Cloudflare, Inc. (United States): hosting and database.</li><li>Resend (United States): sends sign-in emails, so it receives your email address.</li><li>Google Fonts (United States): pages load fonts from Google, so your browser sends its IP address and user agent.</li><li>Paddle.com Market Limited (United Kingdom): would handle payment if paid plans open. It receives nothing while billing is off.</li></ul>
+<ul><li>Cloudflare, Inc. (United States): hosting and database.</li><li>Resend (United States): sends sign-in emails, so it receives your email address.</li><li>Google Fonts (United States): pages load fonts from Google, so your browser sends its IP address and user agent.</li><li>Paddle.com Market Limited (United Kingdom): ${paid ? "the seller of paid plans. We send it only the plan and an internal account ID. You give it your email and payment details at checkout, and it sends us back the subscription status, its customer ID and refund or chargeback notices, never your card details." : "would handle payment if paid plans open. It receives nothing while billing is off."}</li></ul>
 <p>Those countries' laws can differ from Japan's. Ask us for more about a provider's safeguards.</p>
 <h2>Security</h2><p>Keys and session tokens are stored only as hashes, traffic uses HTTPS, secrets are kept outside the code, and access to the systems is limited to the operator.</p>
 <h2>Keeping and deleting</h2><p>Account data stays while your account exists. Ask us to delete the account and we remove its email, keys, usage and webhooks. Sign-in links expire in 20 minutes. Requests sent through the contact form (what you wrote, the page and your email address) are kept for one year to answer and track them, then deleted; your network address is stored only as a hash that changes every day, to limit abuse.</p>
 <h2>Cookies</h2><p>One cookie, <code>jf_session</code>, keeps you signed in for up to 30 days. It is removed when you sign out.</p>
 <h2>EU and UK</h2><p>We have not yet reviewed this policy against the GDPR or UK GDPR, and the service is not aimed at people in those regions until we have. You can still make any request above.</p>
-<h2>Contact</h2><p>Use the <a href="/contact">contact form</a>.</p>`, "What JapanStake keeps about account holders and people named in filings, who processes it, and how to ask for a correction or a stop.");
+<h2>Contact</h2><p>Use the <a href="/contact">contact form</a>.</p>`, "What JapanStake keeps about account holders and people named in filings, who processes it, and how to ask for a correction or a stop.", paid ? PAID_UPDATED : "2026-11-01");
 }
 
 export function contactPage(user: User | null, state: { sent?: boolean; error?: string; form?: Record<string, string> } = {}) {
@@ -1152,7 +1163,7 @@ export function legalPage(user: User | null, env: LegalEnv) {
     ["返金 / Refunds", esc(env.LEGAL_REFUNDS)],
     ["動作環境 / Requirements", "インターネット接続と、HTTPSでAPIまたはMCPを呼び出せる環境。"],
   ];
-  return legal(user, "特定商取引法に基づく表記", "/legal", `<div class="panel scroll"><table>${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${v}</td></tr>`).join("")}</table></div>`, "特定商取引法に基づく表記 / Legal notice.");
+  return legal(user, "特定商取引法に基づく表記", "/legal", `<div class="panel scroll"><table>${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${v}</td></tr>`).join("")}</table></div>`, "特定商取引法に基づく表記 / Legal notice.", PAID_UPDATED);
 }
 
 export function notFoundPage(user: User | null, what = "page") {

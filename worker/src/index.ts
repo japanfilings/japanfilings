@@ -91,8 +91,8 @@ app.get("/pricing", async (c) => {
 });
 app.get("/docs", (c) => c.html(site.docs(c.get("user"), OPENAPI, origin(c.req.url))));
 app.get("/sources", (c) => c.html(site.sources(c.get("user"))));
-app.get("/terms", (c) => c.html(site.terms(c.get("user"), contact(c))));
-app.get("/privacy", (c) => c.html(site.privacy(c.get("user"), contact(c))));
+app.get("/terms", (c) => c.html(site.terms(c.get("user"), contact(c), site.legalReady(c.env))));
+app.get("/privacy", (c) => c.html(site.privacy(c.get("user"), contact(c), site.legalReady(c.env))));
 app.get("/contact", (c) => c.html(site.contactPage(c.get("user"))));
 app.post("/contact", async (c) => {
   if (!sameOrigin(c)) return c.text("Forbidden", 403);
