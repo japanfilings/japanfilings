@@ -176,7 +176,7 @@ GitHub の Settings → Notifications → Actions で「失敗のみメール」
    ```toml
    routes = [{ pattern = "<ドメイン>", custom_domain = true }]
    ```
-3. `npx wrangler secret put PUBLIC_ORIGIN`(`https://<ドメイン>`)。GitHub の変数 `STATUS_URL` も独自ドメインの `/v1/status` にする。
+3. `npx wrangler secret put PUBLIC_ORIGIN`(`https://<ドメイン>`。wrangler.toml の [vars] には書かない: 書くと手元のテストもそのドメインを使う)。旧 workers.dev への要求は PUBLIC_ORIGIN に 308 で転送される。GitHub の変数 `STATUS_URL` も独自ドメインの `/v1/status` にする。
 4. Resend で `MAIL_FROM` のドメインを認証(DNS に SPF/DKIM)し、ログインメールが届くことを確認。
 
 【未検証】アカウントが無いため、画面の名称は変わっている可能性があります。

@@ -37,7 +37,7 @@ export const oauthEnabled = (env: OAuthEnv) => env.OAUTH_ENABLED === "1";
 export const isOAuthToken = (t: string | null) => !!t && t.startsWith(TOKEN_PREFIX);
 
 const isLoopbackHost = (h: string) => h === "localhost" || h === "127.0.0.1" || h === "[::1]";
-const issuerOf = (env: OAuthEnv, url: string) => (env.PUBLIC_ORIGIN ?? new URL(url).origin).replace(/\/$/, "");
+const issuerOf = (env: OAuthEnv, url: string) => (env.PUBLIC_ORIGIN || new URL(url).origin).replace(/\/$/, "");
 const resourceOf = (env: OAuthEnv, url: string) => `${issuerOf(env, url)}/mcp`;
 const prmUrl = (env: OAuthEnv, url: string) => `${issuerOf(env, url)}/.well-known/oauth-protected-resource/mcp`;
 

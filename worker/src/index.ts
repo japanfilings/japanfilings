@@ -29,6 +29,14 @@ const origin = (url: string) => new URL(url).origin;
 
 // ---------- Website ----------
 
+// The old *.workers.dev address forwards to the public domain; 308 keeps the method and body for API clients.
+app.use("*", async (c, next) => {
+  const pub = c.env.PUBLIC_ORIGIN?.replace(/\/$/, "");
+  const url = new URL(c.req.url);
+  if (pub && url.hostname.endsWith(".workers.dev")) return c.redirect(pub + url.pathname + url.search, 308);
+  await next();
+});
+
 app.use(
   "*",
   secureHeaders({

@@ -1,5 +1,5 @@
 # Fails, and so emails the owner, when the public data goes stale, ingest stops succeeding or R2 grows past 5 GB.
-# Variable: STATUS_URL, e.g. https://japanfilings.example.workers.dev/v1/status
+# Variable: STATUS_URL, e.g. https://japanstake.com/v1/status
 name: watchdog
 
 on:

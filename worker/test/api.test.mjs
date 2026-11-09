@@ -1,4 +1,4 @@
-// Run against `wrangler dev --test-scheduled` with data loaded:
+// Run against `wrangler dev --test-scheduled --local-upstream localhost:8788` with data loaded (the upstream flag keeps links local now that a custom domain is routed):
 //   BASE=http://localhost:8788 FREE_KEY=... PRO_KEY=... BUSINESS_KEY=... npm test
 import assert from "node:assert/strict";
 import test from "node:test";
