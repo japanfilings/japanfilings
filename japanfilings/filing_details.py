@@ -23,6 +23,7 @@ more is not read. Birth dates and home addresses are never read. Personal names 
 """
 import json
 import os
+import time
 import re
 import unicodedata
 
@@ -1139,8 +1140,8 @@ def store(con, doc_id, parsed, ticker, edinet_code, fiscal_year_end, submit_date
             json.dumps({**rec, "doc_id": doc_id, "item": item, "status": status, "source_url": url}, ensure_ascii=False)))
 
 
-def run(con, limit=None, cached_only=True):
-    """Read annual reports not yet read. Stock companies' reports only (those with an annual_reports row, or all type 120
+def run(con, limit=None, cached_only=True, minutes=None):
+    """Read annual reports not yet read, stopping cleanly after `minutes` so the run is still recorded. Stock companies' reports only (those with an annual_reports row, or all type 120
     named 有価証券報告書 when that table is empty). Returns (documents read, documents failed)."""
     con.executescript(SCHEMA)
     rows = con.execute(
@@ -1150,7 +1151,10 @@ def run(con, limit=None, cached_only=True):
     if cached_only:
         rows = [r for r in rows if os.path.exists(os.path.join(edinet.CSV_CACHE, f"{r[0]}.zip"))]
     read = failed = 0
+    deadline = time.monotonic() + minutes * 60 if minutes else None
     for doc_id, submitted, edinet_code, ticker in rows[:limit]:
+        if deadline and time.monotonic() > deadline:
+            break  # the rest is read by the next run
         try:
             facts = xbrlcsv.read_facts(edinet.download_csv_zip(doc_id))
             parsed = parse(facts)

@@ -241,7 +241,7 @@ jobs:
           EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
         run: |
           . "$BUDGET_SH"
-          rc=0; budget 1800 python -m japanfilings.cli filing-details --network || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
+          rc=0; budget 1800 python -m japanfilings.cli filing-details --network --minutes "$(budget_minutes 27)" || rc=$?; [ "$rc" = 0 ] || [ "$rc" = 124 ]
       - name: Nightly - shareholder voting results
         id: voting
         if: steps.mode.outputs.mode != 'fast'

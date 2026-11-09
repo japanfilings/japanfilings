@@ -22,6 +22,7 @@ import urllib.request
 from datetime import date, datetime, timedelta, timezone
 
 from . import edinet, store
+from .voting import AGM_WINDOW_DAYS as _AGM_WINDOW
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 DATASETS = json.load(open(os.path.join(ROOT, "worker", "src", "datasets.json"), encoding="utf-8"))
@@ -49,7 +50,11 @@ RULES = {
     "governance": ("(f.doc_type_code IN ('235','236') OR (f.doc_type_code = '180' AND f.description_ja = '臨時報告書' AND f.ticker IS NOT NULL))", "SELECT doc_id FROM governance_read WHERE status != 'failed'"),
     "tender_offers": ("f.doc_type_code IN ('240','270','290')", "SELECT doc_id FROM tender_offers"),
     "filing_details": ("f.doc_type_code = '120' AND f.has_csv = 1 AND f.ticker IS NOT NULL", "SELECT doc_id FROM filing_details_read WHERE status = 'read'"),
-    "voting": ("f.doc_type_code IN ('180','190') AND f.has_csv = 1 AND f.ticker IS NOT NULL", "SELECT doc_id FROM voting_read"),
+    # Only reports the voting job opens: those filed in the window around the company's annual report (voting.candidates).
+    # Extraordinary reports outside it are other events, not meeting results, and are never read, so they are no gap.
+    "voting": ("f.doc_type_code IN ('180','190') AND f.has_csv = 1 AND f.ticker IS NOT NULL AND EXISTS (SELECT 1 FROM filings a WHERE a.edinet_code = f.edinet_code "
+               f"AND a.doc_type_code = '120' AND a.withdrawn = 0 AND julianday(substr(f.submit_datetime,1,10)) - julianday(substr(a.submit_datetime,1,10)) BETWEEN {_AGM_WINDOW[0]} AND {_AGM_WINDOW[1]})",
+               "SELECT doc_id FROM voting_read"),
 }
 _HALF = ("SELECT f.doc_id, f.submit_datetime, f.edinet_code, i.ticker FROM filings f JOIN issuers i ON i.edinet_code = f.edinet_code "
          "WHERE f.doc_type_code IN ('160','170') AND i.listed = 1 AND i.ticker IS NOT NULL AND f.has_csv = 1 AND f.withdrawn = 0 ORDER BY f.submit_datetime DESC")

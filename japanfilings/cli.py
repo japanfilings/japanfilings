@@ -9,7 +9,7 @@
   python -m japanfilings.cli halfyear                     # half-year results of every listed company (EDINET)
   python -m japanfilings.cli buybacks                     # monthly share-buyback reports (EDINET)
   python -m japanfilings.cli governance                   # internal-control conclusions, auditor changes (EDINET)
-  python -m japanfilings.cli filing-details [N]           # annual-report detail tables (cached CSV by default)
+  python -m japanfilings.cli filing-details [N] [--network] [--minutes M]  # annual-report detail tables (cached CSV by default)
   python -m japanfilings.cli voting [N]                   # shareholder votes (cached CSV by default)
   python -m japanfilings.cli tender-offers [N] [--reparse] # tender offers (cached CSV by default; --reparse re-reads parsed rows)
   python -m japanfilings.cli investors                    # rebuild organization-only investor groups
@@ -480,8 +480,9 @@ def main(argv):
     elif cmd == "filing-details":
         from . import filing_details
         network = "--network" in args
-        nums = [a for a in args if a.isdigit()]
-        print("filing details read, failed:", filing_details.run(con, int(nums[0]) if nums else None, cached_only=not network))
+        minutes = int(args[args.index("--minutes") + 1]) if "--minutes" in args else None
+        nums = [a for i, a in enumerate(args) if a.isdigit() and (i == 0 or args[i - 1] != "--minutes")]
+        print("filing details read, failed:", filing_details.run(con, int(nums[0]) if nums else None, cached_only=not network, minutes=minutes))
     elif cmd == "voting":
         from . import voting
         network = "--network" in args
