@@ -6,7 +6,7 @@ of the same document once that parser exists.
 import re
 import subprocess
 
-from .textutil import nfkc, parse_jp_date, parse_number
+from .textutil import nfkc, parse_jp_date, parse_number, require_japanese
 
 # Human-readable link to the original; not used for automated downloads.
 PDF_URL = "https://disclosure2dl.edinet-fsa.go.jp/searchdocument/pdf/{doc_id}.pdf"
@@ -35,8 +35,8 @@ PURPOSE_TAGS = [
 
 
 def pdf_to_text(pdf_path: str) -> str:
-    return subprocess.run(["pdftotext", "-layout", pdf_path, "-"],
-                          check=True, capture_output=True, text=True).stdout
+    return require_japanese(subprocess.run(["pdftotext", "-layout", pdf_path, "-"],
+                                           check=True, capture_output=True, text=True).stdout)
 
 
 def _bracket_field(lines, label):

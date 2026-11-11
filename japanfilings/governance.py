@@ -26,8 +26,8 @@ import tempfile
 import unicodedata
 import zipfile
 
-from . import edinet
-from .textutil import parse_jp_date
+from . import edinet, store
+from .textutil import parse_jp_date, require_japanese
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS governance_events (
@@ -379,7 +379,7 @@ def _pdf_text(pdf):
     with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
         f.write(pdf)
         f.flush()
-        return subprocess.run(["pdftotext", "-layout", f.name, "-"], capture_output=True, text=True, check=True).stdout
+        return require_japanese(subprocess.run(["pdftotext", "-layout", f.name, "-"], capture_output=True, text=True, check=True).stdout)
 
 
 def blocks_from_pdf_text(text):
@@ -488,6 +488,11 @@ def run(con, limit=None, kinds=("internal_control", "auditor_change"), include_a
     """Read filings not yet read, sequentially at EDINET's pace, resuming where it stopped. Returns status counts.
     `limit` caps documents opened in this call. Every read is cached in data/csv_cache."""
     con.executescript(SCHEMA)
+    # Once: filings from 2026-11-01 were read without Japanese text (poppler-data missing) and found no
+    # event; read them again. A filing that really has no event is simply recorded again.
+    store.run_once(con, "reread_governance_2026_11", "DELETE FROM governance_read WHERE doc_id IN "
+                   "(SELECT doc_id FROM filings WHERE submit_datetime >= '2026-11-01') "
+                   "AND doc_id NOT IN (SELECT doc_id FROM governance_events)")
     todo = []
     if "internal_control" in kinds:
         todo += [(m, "internal_control") for m in internal_control_candidates(con)]

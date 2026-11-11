@@ -43,7 +43,7 @@ DERIVED = [("large_holdings", "doc_id"), ("ownership_events", "doc_id"), ("holde
            ("filing_details", "doc_id"), ("filing_details_read", "doc_id"), ("voting_results", "doc_id"), ("voting_read", "doc_id"), ("tender_offers", "doc_id")]
 # dataset: which filings should have been read, and the set of those that were.
 RULES = {
-    "large_holdings": ("f.doc_type_code IN ('350','360')", "SELECT doc_id FROM large_holdings"),
+    "large_holdings": ("f.doc_type_code IN ('350','360')", "SELECT doc_id FROM large_holdings WHERE NOT (json_extract(record, '$.report_title_ja') IS NULL AND filer_edinet_code IS NULL)"),
     "annual": ("f.doc_type_code IN ('120','130') AND f.has_csv = 1 AND f.ticker IS NOT NULL", "SELECT doc_id FROM annual_reports"),
     "buybacks": ("f.doc_type_code IN ('220','230') AND f.has_csv = 1", "SELECT doc_id FROM buyback_reports"),
     "ratings": ("f.doc_type_code = '100'", "SELECT doc_id FROM ratings_read"),

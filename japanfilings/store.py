@@ -160,8 +160,14 @@ def us_fund_holdings(con, ticker):
     return json.loads(r["record"]) if r else None
 
 
+# A record with neither a title nor a filer means no text was read from the PDF (on 2026-11-05 the
+# runner image lost poppler-data and 240 filings were stored empty). It does not count as read, so
+# the next run reads the filing again.
+EMPTY_LARGE_HOLDING = "json_extract(record, '$.report_title_ja') IS NULL AND filer_edinet_code IS NULL"
+
+
 def has_large_holding(con, doc_id):
-    return con.execute("SELECT 1 FROM large_holdings WHERE doc_id = ?", (doc_id,)).fetchone() is not None
+    return con.execute(f"SELECT 1 FROM large_holdings WHERE doc_id = ? AND NOT ({EMPTY_LARGE_HOLDING})", (doc_id,)).fetchone() is not None
 
 
 def _normalize_name(name):
@@ -382,3 +388,14 @@ def large_holdings(con, ticker=None, filer_edinet_code=None, since=None, limit=5
         sql += " AND submit_date >= ?"; args.append(since)
     sql += " ORDER BY submit_date DESC LIMIT ?"; args.append(limit)
     return [json.loads(r["record"]) for r in con.execute(sql, args)]
+
+
+def run_once(con, name, sql):
+    """Run a one-time repair, recorded so it never runs twice on the same database."""
+    con.execute("CREATE TABLE IF NOT EXISTS repairs_done (name TEXT PRIMARY KEY, at TEXT)")
+    if con.execute("SELECT 1 FROM repairs_done WHERE name = ?", (name,)).fetchone():
+        return False
+    con.execute(sql)
+    con.execute("INSERT INTO repairs_done VALUES (?, datetime('now'))", (name,))
+    con.commit()
+    return True

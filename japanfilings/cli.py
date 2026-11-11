@@ -57,6 +57,9 @@ def _ingest_pdf_bytes(con, doc_id, pdf, xbrl=None):
         f.write(pdf)
         f.flush()
         rec = largeholding.parse_text(largeholding.pdf_to_text(f.name), doc_id)
+    if not rec["report_title_ja"] and not rec["filer_edinet_code"]:
+        # Nothing was read: store nothing, so the filing stays missing and is retried and reported.
+        raise RuntimeError("no text read from the PDF (is poppler-data installed?)")
     rec["pdf_ratio_pct"] = rec["holding_ratio_pct"]
     rec["ratio_source"] = "pdf" if rec["holding_ratio_pct"] is not None else None
     if xbrl:

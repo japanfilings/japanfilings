@@ -10,8 +10,8 @@ import subprocess
 import tempfile
 import unicodedata
 
-from . import edinet
-from .textutil import parse_jp_date
+from . import edinet, store
+from .textutil import parse_jp_date, require_japanese
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS disclosed_ratings (
@@ -93,13 +93,16 @@ def _pdf_text(pdf):
     with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
         f.write(pdf)
         f.flush()
-        return subprocess.run(["pdftotext", "-layout", f.name, "-"], capture_output=True, text=True, check=True).stdout
+        return require_japanese(subprocess.run(["pdftotext", "-layout", f.name, "-"], capture_output=True, text=True, check=True).stdout)
 
 
 def run(con, limit=None):
     """Read every bond supplement not yet read. Returns (documents read, ratings stored)."""
     con.executescript(SCHEMA)
     con.execute("CREATE TABLE IF NOT EXISTS ratings_read (doc_id TEXT PRIMARY KEY, found INTEGER)")
+    # Once: supplements filed from 2026-11-01 were read without Japanese text and found nothing; read them again.
+    store.run_once(con, "reread_ratings_2026_11", "DELETE FROM ratings_read WHERE found = 0 AND doc_id IN "
+                   "(SELECT doc_id FROM filings WHERE doc_type_code = '100' AND submit_datetime >= '2026-11-01')")
     rows = con.execute(
         "SELECT f.doc_id, f.submit_datetime, f.edinet_code, f.description_ja, f.filer_name_ja, i.ticker FROM filings f LEFT JOIN issuers i ON i.edinet_code = f.edinet_code "
         "WHERE f.doc_type_code = '100' AND f.withdrawn = 0 AND f.doc_id NOT IN (SELECT doc_id FROM ratings_read) ORDER BY f.submit_datetime DESC").fetchall()

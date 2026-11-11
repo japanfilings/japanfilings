@@ -35,3 +35,14 @@ def parse_number(s: str) -> float | None:
     if not _NUM_RE.match(s):
         return None
     return float(s.replace(",", ""))
+
+
+_JAPANESE = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
+
+
+def require_japanese(text: str) -> str:
+    """EDINET PDFs always contain Japanese. If pdftotext returned none (for example without
+    poppler-data, as on the ubuntu-26.04 runner from 2026-11), fail instead of storing an empty read."""
+    if not _JAPANESE.search(text or ""):
+        raise RuntimeError("no Japanese text read from the PDF (is poppler-data installed?)")
+    return text

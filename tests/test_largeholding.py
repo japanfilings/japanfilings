@@ -1,6 +1,7 @@
 """Checks against real EDINET filings. Expected values were verified independently
 (public_data_business/SOURCE_VERIFICATION.json). PDFs are fetched once through the
 EDINET API (needs EDINET_API_KEY) into .cache/."""
+import json
 import os
 
 import pytest
@@ -382,3 +383,24 @@ def test_link_issuer_review_hypotheses():
     # 0000 is EDINET's placeholder, never a ticker.
     rec = _linked(con, "X2", "0000", "株式会社エフフォーティ")
     assert con.execute("SELECT ticker FROM issuers WHERE edinet_code = 'E040'").fetchone()[0] is None
+
+
+def test_empty_record_counts_as_unread(tmp_path):
+    # From 2026-11-05 the runner lacked poppler-data and stored filings with no text read. Such a
+    # record must not count as read, so the next ingest reads the filing again.
+    con = store.connect(str(tmp_path / "t.db"))
+    empty = largeholding.parse_text("", "S100EMPTY")
+    con.execute("INSERT INTO large_holdings (doc_id, issuer_ticker, filer_edinet_code, submit_date, record) VALUES (?, NULL, NULL, NULL, ?)",
+                ("S100EMPTY", json.dumps(empty)))
+    assert not store.has_large_holding(con, "S100EMPTY")
+    full = {**empty, "doc_id": "S100FULL", "report_title_ja": "変更報告書", "filer_edinet_code": "E20021"}
+    con.execute("INSERT INTO large_holdings (doc_id, issuer_ticker, filer_edinet_code, submit_date, record) VALUES (?, NULL, ?, NULL, ?)",
+                ("S100FULL", "E20021", json.dumps(full)))
+    assert store.has_large_holding(con, "S100FULL")
+
+
+def test_pdf_without_japanese_text_is_an_error():
+    from japanfilings.textutil import require_japanese
+    with pytest.raises(RuntimeError):
+        require_japanese("  \n\x0c ")
+    assert require_japanese("変更報告書") == "変更報告書"
