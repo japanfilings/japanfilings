@@ -28,6 +28,7 @@ jobs:
         continue-on-error: true
         env:
           STATUS_URL: ${{ vars.STATUS_URL }}
+          LEXICON_JSON: ${{ secrets.LEXICON_JSON }}  # japanfilings.cli loads the word lists on import
         run: |
           [ -n "$STATUS_URL" ] || { echo "::error::Set the STATUS_URL repository variable."; exit 1; }
           python -m japanfilings.cli check-freshness "$STATUS_URL" --max-age-days 5
