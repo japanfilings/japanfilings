@@ -56,7 +56,7 @@ RULES = {
                f"AND a.doc_type_code = '120' AND a.withdrawn = 0 AND julianday(substr(f.submit_datetime,1,10)) - julianday(substr(a.submit_datetime,1,10)) BETWEEN {_AGM_WINDOW[0]} AND {_AGM_WINDOW[1]})",
                "SELECT doc_id FROM voting_read"),
 }
-_HALF = ("SELECT f.doc_id, f.submit_datetime, f.edinet_code, i.ticker FROM filings f JOIN issuers i ON i.edinet_code = f.edinet_code "
+_HALF = ("SELECT i.ticker, f.doc_id, f.submit_datetime, f.description_ja, f.edinet_code FROM filings f JOIN issuers i ON i.edinet_code = f.edinet_code "
          "WHERE f.doc_type_code IN ('160','170') AND i.listed = 1 AND i.ticker IS NOT NULL AND f.has_csv = 1 AND f.withdrawn = 0 ORDER BY f.submit_datetime DESC")
 _REBUILD = {"large_holdings": ("events", "trades", "indicators"), "annual": ("crossholdings", "indicators")}
 
@@ -117,11 +117,9 @@ def _missing(con, ds, since=None):
     """Filings that should have been read for a dataset and were not, newest first."""
     if ds == "half_year":
         have = {r[0] for r in con.execute("SELECT url FROM earnings_releases WHERE url LIKE 'edinet:%'")} if _table_exists(con, "earnings_releases") else set()
-        seen, out = set(), []
-        for doc_id, sub, code, ticker in con.execute(_HALF):
-            if ticker in seen:
-                continue
-            seen.add(ticker)
+        from .halfyear import latest_per_ticker  # the same choice the half-year job makes
+        out = []
+        for ticker, doc_id, sub, desc, code in latest_per_ticker(con.execute(_HALF).fetchall()):
             if f"edinet:{doc_id}" not in have and (not since or sub[:10] >= since):
                 out.append({"doc_id": doc_id, "submit_datetime": sub, "edinet_code": code})
         return out
@@ -302,8 +300,9 @@ def _read_rating(con, f, ratings):
 
 
 def _read_half_year(con, f, halfyear, xbrlcsv):
-    fy = halfyear.fiscal_year_end_month(f["description_ja"])
-    rec = halfyear.parse(xbrlcsv.read_facts(edinet.download_csv_zip(f["doc_id"]))) if fy else None
+    facts = xbrlcsv.read_facts(edinet.download_csv_zip(f["doc_id"]))
+    fy = halfyear.fiscal_year_end_month(f["description_ja"]) or halfyear.fiscal_year_from_facts(facts)
+    rec = halfyear.parse(facts) if fy else None
     if not rec:
         raise ValueError("no summary table")
     doc = f["doc_id"]

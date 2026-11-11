@@ -49,3 +49,24 @@ def test_ytd_and_quarter_contexts_are_read():
     assert rec["results"]["revenue_mn_jpy"] == 10064.909
     assert rec["results"]["revenue_yoy_pct"] == -0.7
     assert rec["financial_position"]["total_assets"] == 37557266000
+
+
+def test_latest_report_is_by_period_then_filing_time():
+    from japanfilings import halfyear
+    rows = [
+        # A correction of last year's report, filed after this year's report, must not replace it.
+        ("5021", "S100ZDRX", "2026-11-10 17:00", "訂正半期報告書－第11期(2025/04/01－2025/09/30)"),
+        ("5021", "S100ZDE0", "2026-11-10 15:31", "半期報告書－第12期(2026/04/01－2026/09/30)"),
+        # A title with no period is taken as this year's report.
+        ("7011", "S100ZDE8", "2026-11-10 13:04", "半期報告書"),
+        ("7011", "S100OLD1", "2025-11-12 13:00", "半期報告書－第100期(2025/04/01－2025/09/30)"),
+    ]
+    picked = {r[0]: r[1] for r in halfyear.latest_per_ticker(rows)}
+    assert picked == {"5021": "S100ZDE0", "7011": "S100ZDE8"}
+
+
+def test_fiscal_year_from_dei():
+    from japanfilings import halfyear
+    facts = [{"element": "jpdei_cor:CurrentFiscalYearEndDateDEI", "context": "FilingDateInstant", "value": "2027-03-31"}]
+    assert halfyear.fiscal_year_from_facts(facts) == "2027-03"
+    assert halfyear.fiscal_year_from_facts([]) is None

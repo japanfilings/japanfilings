@@ -42,6 +42,33 @@ def fiscal_year_end_month(description):
     return f"{end.year}-{end.month:02d}"
 
 
+def fiscal_year_from_facts(facts):
+    """'YYYY-MM' from the filing's own DEI, for titles that carry no period (e.g. just 半期報告書)."""
+    v = next((f["value"] for f in facts if f["element"] == "jpdei_cor:CurrentFiscalYearEndDateDEI"), None)
+    return v[:7] if v and re.match(r"\d{4}-\d{2}", v) else None
+
+
+def _order_key(desc, submitted):
+    """Newest fiscal period first, then newest filing. A correction of last year's report filed after this
+    year's report must not stand in for it. Without a period in the title, assume the filing belongs to the
+    fiscal year ending about five months after it was filed (the half-year report is due within 45 days)."""
+    fy = fiscal_year_end_month(desc)
+    if not fy:
+        d = date.fromisoformat(submitted[:10]) + timedelta(days=150)
+        fy = f"{d.year}-{d.month:02d}"
+    return (fy, submitted)
+
+
+def latest_per_ticker(rows):
+    """rows: (ticker, doc_id, submitted, description, ...). The one half-year report to show per company."""
+    best = {}
+    for r in rows:
+        key = _order_key(r[3], r[2])
+        if r[0] not in best or key > best[r[0]][0]:
+            best[r[0]] = (key, r)
+    return sorted((v[1] for v in best.values()), key=lambda r: r[2], reverse=True)
+
+
 def _pick(items, key):
     for p in annual.SUMMARY_KEYS[key]:
         hit = next((v for k, v in items.items() if re.fullmatch(p + r"(IFRS|USGAAP|JMIS)?", k)), None)
@@ -85,23 +112,22 @@ def run(con, limit=None):
         "WHERE f.doc_type_code IN ('160', '170') AND i.listed = 1 AND i.ticker IS NOT NULL AND f.has_csv = 1 AND f.withdrawn = 0 "
         "ORDER BY f.submit_datetime DESC").fetchall()
     have = {r[0] for r in con.execute("SELECT url FROM earnings_releases WHERE period = 'H1'")}
-    seen, done = set(), 0
-    for ticker, doc_id, submitted, desc in rows:
-        if ticker in seen:
-            continue
-        seen.add(ticker)
+    done = 0
+    for ticker, doc_id, submitted, desc in latest_per_ticker(rows):
         url = f"edinet:{doc_id}"
         if url in have:
             continue
         if limit is not None and done >= limit:
             break
-        fy = fiscal_year_end_month(desc)
-        if not fy:
-            continue
         try:
-            rec = parse(xbrlcsv.read_facts(edinet.download_csv_zip(doc_id)))
+            facts = xbrlcsv.read_facts(edinet.download_csv_zip(doc_id))
+            rec = parse(facts)
         except Exception as e:
             print(ticker, doc_id, "FAILED", e, flush=True)
+            continue
+        fy = fiscal_year_end_month(desc) or fiscal_year_from_facts(facts)
+        if not fy:
+            print(ticker, doc_id, "no fiscal year", flush=True)
             continue
         if not rec:
             print(ticker, doc_id, "no summary table", flush=True)
