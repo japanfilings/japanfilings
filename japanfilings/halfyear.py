@@ -10,7 +10,9 @@ from datetime import date, timedelta
 
 from . import annual, edinet, tanshin, xbrlcsv
 
-_CTX = re.compile(r"^(Prior1)?Interim(Duration|Instant)(_NonConsolidatedMember)?$")
+# Half-year reports use Interim* contexts; some (former quarterly filers) use YTDDuration for the
+# half-year period and QuarterInstant for its end date instead. Both carry the same summary table.
+_CTX = re.compile(r"^(?:Current|(Prior1))?(InterimDuration|InterimInstant|YTDDuration|QuarterInstant)(_NonConsolidatedMember)?$")
 FIELDS = {"revenue": "revenue", "ordinary_income": "ordinary_income", "profit_before_tax": "profit_before_tax", "net_income": "net_income_parent"}
 
 

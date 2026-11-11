@@ -357,6 +357,10 @@ def process_queue(con, minutes=30, max_docs=300, reader=read_doc):
 
 def reconcile(con, days=35, minutes=30, max_docs=300, today=None, list_holes=3):
     ensure(con)
+    # Once: half-year reports with YTD/Quarter contexts failed as "no summary table" until 2026-11-11
+    # and may have used up their attempts; let them be read again with the fixed parser.
+    store.run_once(con, "retry_half_year_ytd_2026_11",
+                   "UPDATE reconcile_queue SET attempts = 0, done_at = NULL, last_error = NULL WHERE dataset = 'half_year' AND last_error = 'ValueError'")
     today = today or date.today().isoformat()
     since = (date.fromisoformat(today) - timedelta(days=days)).isoformat()
     filed = sorted({r[0] for r in con.execute("SELECT DISTINCT substr(submit_datetime,1,10) FROM filings WHERE submit_datetime >= ?", (since,))})

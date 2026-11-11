@@ -34,3 +34,18 @@ def test_refresh_stores_h1_under_the_fiscal_year_end(monkeypatch):
     row = con.execute("SELECT ticker, fiscal_year_end_month, period, record FROM earnings_releases").fetchone()
     assert row[:3] == ("9697", "2027-03", "H1")
     assert json.loads(row[3])["fiscal_year_end_month"] == "2027-03"
+
+
+def test_ytd_and_quarter_contexts_are_read():
+    # Some half-year reports label the period CurrentYTDDuration and its end CurrentQuarterInstant.
+    from japanfilings import halfyear
+    facts = [
+        {"element": "jpcrp_cor:NetSalesSummaryOfBusinessResults", "context": "CurrentYTDDuration", "value": "10064909000"},
+        {"element": "jpcrp_cor:NetSalesSummaryOfBusinessResults", "context": "Prior1YTDDuration", "value": "10135000000"},
+        {"element": "jpcrp_cor:NetSalesSummaryOfBusinessResults", "context": "Prior1YearDuration", "value": "20000000000"},
+        {"element": "jpcrp_cor:TotalAssetsSummaryOfBusinessResults", "context": "CurrentQuarterInstant", "value": "37557266000"},
+    ]
+    rec = halfyear.parse(facts)
+    assert rec["results"]["revenue_mn_jpy"] == 10064.909
+    assert rec["results"]["revenue_yoy_pct"] == -0.7
+    assert rec["financial_position"]["total_assets"] == 37557266000
