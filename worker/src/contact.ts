@@ -62,15 +62,15 @@ async function forward(env: ContactEnv, r: Row) {
 }
 
 /** Every 5 minutes: retry requests whose email failed, so a cancellation or refund request is not lost.
- *  The email keeps the original received time, which is what the terms count from. Only the last hour
- *  is retried, so a request Resend keeps refusing cannot block newer ones; older unsent requests are
- *  found by the monthly check in docs/DEPLOY.md. */
+ *  The email keeps the original received time, which is what the terms count from. Retried for 14 days,
+ *  newest first, so a request Resend keeps refusing cannot block newer ones; the watchdog reports any
+ *  request still unsent after 30 minutes. */
 export async function retryForward(env: ContactEnv, now = new Date()) {
   if (!(env.RESEND_API_KEY && env.MAIL_FROM && env.CONTACT_EMAIL)) return;
   const before = new Date(now.getTime() - 2 * 60_000).toISOString(); // let the first attempt finish
-  const since = new Date(now.getTime() - 60 * 60_000).toISOString();
+  const since = new Date(now.getTime() - 14 * 86_400_000).toISOString();
   const { results } = await env.DB.prepare(
-    "SELECT id, created_at, kind, page, message, reply_email FROM contact_messages WHERE notified = 0 AND created_at < ?1 AND created_at > ?2 ORDER BY created_at DESC LIMIT 5",
+    "SELECT id, created_at, kind, page, message, reply_email FROM contact_messages WHERE notified = 0 AND created_at < ?1 AND created_at > ?2 ORDER BY created_at DESC LIMIT 20",
   ).bind(before, since).all<Row>();
   for (const r of results) await forward(env, r);
 }

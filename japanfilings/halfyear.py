@@ -89,7 +89,8 @@ def parse(facts):
         raw.setdefault((bool(m.group(1)), bool(m.group(3))), {})[name.replace("SummaryOfBusinessResults", "")] = v
     if not raw:
         return None
-    non_consolidated = not any(not nc for _, nc in raw)
+    # Decide from the current period: a company may report consolidated figures for the prior period only.
+    non_consolidated = (False, False) not in raw
     cur, prior = raw.get((False, non_consolidated)) or {}, raw.get((True, non_consolidated)) or {}
     results = {}
     for key, out in FIELDS.items():

@@ -473,6 +473,32 @@ def _unsent(state_path, con, table):
         st.close()
 
 
+# Filings a job opened but could not parse. They count as read (a retry would fail the same way), so a
+# parser that breaks for every new filing would otherwise look fresh. _failing() turns that into a gap.
+FAILED_READS = {
+    "voting": "SELECT doc_id FROM voting_read WHERE status = 'failed'",
+    "governance": "SELECT doc_id FROM governance_read WHERE status IN ('unparsed', 'failed')",
+    "buybacks": "SELECT doc_id FROM buyback_reports WHERE parse_status = 'failed'",
+}
+FAILING_MIN = 5  # at least this many failures in the last week...
+FAILING_WINDOW_DAYS = 8
+
+
+def _failing(con, ds, today, settled, hopeless):
+    """Failures in the last week when they are at least FAILING_MIN and half of what was filed: a broken
+    parser (as on 2026-11-05, when PDFs were read with no text) rather than a few odd filings."""
+    where = RULES[ds][0]
+    start = (date.fromisoformat(today) - timedelta(days=FAILING_WINDOW_DAYS)).isoformat()
+    filed = {r[0] for r in con.execute(f"SELECT f.doc_id FROM filings f WHERE f.withdrawn = 0 AND {where} "
+                                       "AND substr(f.submit_datetime, 1, 10) BETWEEN ? AND ?", (start, settled))}
+    failed = set(hopeless)
+    q = FAILED_READS.get(ds)
+    if q and _table_exists(con, re.search(r"FROM (\w+)", q).group(1)):
+        failed |= {r[0] for r in con.execute(q)}
+    bad = filed & failed
+    return len(bad) if len(bad) >= FAILING_MIN and 2 * len(bad) >= len(filed) else 0
+
+
 def publish_sql(con, state_path=None, days=35, today=None):
     ensure(con)
     today = today or date.today().isoformat()
@@ -483,6 +509,9 @@ def publish_sql(con, state_path=None, days=35, today=None):
     # A filing listed today is not a gap yet; give the ingest a day to read it.
     settled = (date.fromisoformat(today) - timedelta(days=1)).isoformat()
     gaps = {ds: sum(1 for d in _missing(con, ds, since) if d["doc_id"] not in hopeless and d["submit_datetime"][:10] <= settled) for ds in [*RULES, "half_year"] if ds != "tender_offers"}
+    for ds in RULES:
+        if ds in gaps:
+            gaps[ds] += _failing(con, ds, today, settled, hopeless)
     for d in DATASETS:
         if d.get("owner") == "worker":
             continue

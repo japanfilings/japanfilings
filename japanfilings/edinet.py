@@ -36,6 +36,12 @@ def _get(path, params, raw=False):
             with urllib.request.urlopen(url, timeout=60) as r:
                 body = r.read()
             break
+        except urllib.error.HTTPError as e:  # a subclass of URLError: decide before the generic retry
+            if e.code < 500 and e.code != 429:
+                raise RuntimeError(f"EDINET HTTP {e.code} for {path}") from None
+            if attempt == 5:
+                raise
+            time.sleep(30 * (attempt + 1))
         except (urllib.error.URLError, TimeoutError, ConnectionError):
             if attempt == 5:
                 raise
@@ -60,8 +66,15 @@ def large_holding_documents(day: str) -> list[dict]:
             if d.get("docTypeCode") in LARGE_HOLDING_DOC_TYPES and d.get("withdrawalStatus") == "0"]
 
 
+def _expect(body: bytes, magic: bytes, doc_id: str) -> bytes:
+    """EDINET reports some errors as JSON with HTTP 200; never treat that as the document."""
+    if not body.startswith(magic):
+        raise RuntimeError(f"EDINET returned no document for {doc_id}: {body[:200]!r}")
+    return body
+
+
 def download_pdf(doc_id: str) -> bytes:
-    return _get(f"documents/{doc_id}", {"type": 2}, raw=True)
+    return _expect(_get(f"documents/{doc_id}", {"type": 2}, raw=True), b"%PDF", doc_id)
 
 
 CSV_CACHE = os.path.join(os.path.dirname(__file__), "..", "data", "csv_cache")
@@ -74,7 +87,7 @@ def download_csv_zip(doc_id: str) -> bytes:
     if os.path.exists(path):
         with open(path, "rb") as f:
             return f.read()
-    body = _get(f"documents/{doc_id}", {"type": 5}, raw=True)
+    body = _expect(_get(f"documents/{doc_id}", {"type": 5}, raw=True), b"PK", doc_id)
     os.makedirs(CSV_CACHE, exist_ok=True)
     with open(path, "wb") as f:
         f.write(body)

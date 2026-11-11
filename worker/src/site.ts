@@ -339,7 +339,7 @@ function pricingCards(open = false, user: User | null = null) {
 <ul>${p.items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>${buyButton(p.plan, open, user)}</div>`).join("")}</div>${open ? renewalNote() : ""}`;
 }
 
-const BILLING_NOTE = `<p class="notice small"><b>Not launched yet.</b> Signup (email, one-time link, then a key on the dashboard) works only on a local test deployment for now, and opens to the public at launch. Every plan is paid, from $9 a month; an account without a plan cannot call the API. Billing is off, so no plan can be bought yet; the prices shown are what we plan to charge.</p>`;
+const BILLING_NOTE = `<p class="notice small"><b>Not on sale yet.</b> You can sign up (email, one-time link, then a key on the dashboard) now. Every plan is paid, from $9 a month, and an account without a plan cannot call the API, so keys work once plans go on sale. The prices shown are what we plan to charge.</p>`;
 const OPEN_NOTE = `<p class="notice small"><b>How signup works:</b> enter your email, follow the one-time link, and create a key on the dashboard. Paid plans are sold through Paddle, our merchant of record, which handles payment and VAT or sales tax. A plan change applies to your existing key. Plans are not sold to buyers in the EU, the EEA, the UK or Switzerland.</p>`;
 // Shown next to every buy button: the period, renewal, charge dates and what goes to Paddle.
 export const renewalNote = () => `<p class="faint xs" style="margin-top:12px">Monthly plan, paid in advance. It renews automatically every month on the same date (or the last day of a shorter month) until you cancel; you are charged when you subscribe and on each renewal date. Cancel at any time from your dashboard; the plan then runs to the end of the paid month. Refunds: a full refund on request within 14 days of your first purchase, once per person or organisation; otherwise no refund for a change of mind. Checkout opens on Paddle, our merchant of record: we send it your plan and an internal account ID, and you enter your email and payment details there. Not sold to buyers in the EU, EEA, UK or Switzerland. By subscribing you agree to our <a href="/terms">terms</a>, Paddle's buyer terms and automatic monthly renewal${legalLink ? `; see also the <a href="/legal">legal notice</a>` : ""}.</p>`;
@@ -942,7 +942,7 @@ ${example(e.ex)}</div>`;
 curl -H "Authorization: Bearer $JAPANSTAKE_KEY" \\
   "${o}/v1/companies/7203"</code></pre>
 <details open><summary>Response</summary><pre><code>${esc(DOC_EXAMPLES.company)}</code></pre></details>
-<p>Every plan is paid and includes every endpoint below; plans differ only in request limits. Billing is off until launch, so no plan can be bought yet; signup works only on a local test deployment for now.</p>
+<p>Every plan is paid and includes every endpoint below; plans differ only in request limits. Plans are not on sale yet; you can sign up and create a key now, and it works once you have a plan.</p>
 <p class="notice small">JapanStake provides reference data from public filings. It distributes no share prices and gives no investment advice, and nothing in the API or this documentation is a recommendation to buy or sell any security. Values we derive (events, net shares, percentiles, matches, interest examples) are labelled as ours, and prices in trade tables are filed prices, not market prices.</p>
 
 <h2 id="auth">Authentication</h2>
@@ -1082,7 +1082,7 @@ const UNPAID_TERMS = `<h2>Plans and payment</h2><p>Every plan is paid; an accoun
 export function terms(user: User | null, contact: string | null, paid = false) {
   return legal(user, "Terms of use", "/terms", `
 <p>These terms apply to the JapanStake website, API and MCP server (the service). By creating an account or using an API key you accept them. They take effect on 2026-11-01${paid ? "; the sections on paid plans take effect on " + PAID_UPDATED : ""}.</p>
-<h2>Who runs the service</h2><p>The service is run by an individual business operator under the name JapanStake. The operator's name and address are given without delay on request from a user or prospective buyer, through the contact below.${paid ? " Paid plans are sold by Paddle (see Plans and payment)." : " Paid plans are not on sale; the seller will be named here before they are."}</p>
+<h2>Who runs the service</h2><p>The service is run by an individual business operator under the name JapanStake. The operator's name, address and phone number are given without delay on request from a user or prospective buyer, through the contact below.${paid ? " Paid plans are sold by Paddle (see Plans and payment)." : " Paid plans are not on sale; the seller will be named here before they are."}</p>
 <h2>The service</h2><p>JapanStake provides data processed from public filings and other public sources. It is reference information, not investment, legal or tax advice, and not a recommendation about any security. Do not use it as the sole basis for an investment or business decision; verify important figures against the original filing linked from each record before you rely on them.</p>
 <h2>Not advice</h2><p>We do not advise on anyone's individual investment decisions and we do not say what to buy, sell or hold. We publish no share prices. Figures, percentiles and sorted lists are arithmetic on the data. If you use the service to give investment advice, to solicit transactions or in any regulated activity, you are responsible for that activity and for any registration it needs.</p>
 <h2>Accuracy and liability</h2><p>Filings can contain errors, and our processing can too. We do not guarantee that the data is accurate, complete or always available. Except for loss caused by our intent or gross negligence (this section applies to ordinary negligence only): (a) we are not liable for lost profits, lost business or indirect or consequential loss; and (b) our total liability to you, on any legal basis and for all claims together, is limited to the greater of the total fees paid for your plan, including through Paddle, in the 12 months before the cause of the claim arose, and USD 100.</p>
@@ -1130,7 +1130,7 @@ export function contactPage(user: User | null, state: { sent?: boolean; error?: 
   const f = state.form ?? {};
   const kinds: [string, string, string][] = [
     ["correction", "Correct a record", "For example a wrong name match, investor grouping or figure."],
-    ["stop", "Stop showing information about a person", "If a record shows you, or someone you represent. We stop showing it while we check."],
+    ["stop", "Stop showing information about a person", "If a record shows you, or someone you represent. We check it against the source filing promptly and reply by email."],
     ["billing", "Cancel a plan or ask for a refund", "Send it from your account's email address, or give that address in the request."],
     ["personal_data", "Your own account or personal data", "Disclosure, correction, deletion or stopping use."],
     ["other", "Something else", "Questions about the service."],
@@ -1191,6 +1191,14 @@ export function notFoundPage(user: User | null, what = "page") {
 
 // ---------- Account ----------
 
+export function verifyPage(token: string) {
+  return page("Sign in | JapanStake", `<div class="wrap"><div class="co-head" style="max-width:560px">
+<h1>Sign in to JapanStake</h1>
+<p class="lead">Press the button to finish signing in. The link works once and expires 20 minutes after it was sent.</p>
+<form method="post" action="/auth/verify"><input type="hidden" name="token" value="${esc(token)}"><button class="btn" type="submit">Sign in</button></form>
+</div></div>`, null, { noindex: true });
+}
+
 export function loginPage(user: User | null, msg = "", devLink?: string, open = false) {
   return page("Sign in | JapanStake", `<div class="wrap"><div class="co-head" style="max-width:560px">
 <h1>Sign in or create an account</h1>
@@ -1225,7 +1233,7 @@ ${hooks.map((h) => `<tr><td><code>${esc(h.url)}</code><div class="xs faint mono"
 <section><h2 style="margin-bottom:10px">Plan</h2><p class="muted" style="margin-bottom:16px">${user.plan === "free" ? (billing?.open ? `You have no plan yet, so your key cannot call the API. <a href="/pricing">Choose a plan</a>, from $9 a month.` : `You have no plan yet, so your key cannot call the API. Plans go on sale at launch. <a href="/pricing">See what they include</a>.`) : `You are on ${user.plan === "starter" ? "Starter" : "Pro"}.`}</p>
 ${billing?.status === "past_due" ? `<p class="notice small" style="margin-bottom:16px">Your last payment failed and is being retried. Update your payment method to keep this plan.</p>` : ""}
 ${billing?.cancelAt ? `<p class="small" style="margin-bottom:16px">Your subscription is cancelled and ends on ${esc(billing.cancelAt.slice(0, 10))}. After that your key stops working until you choose a plan again.</p>` : billing?.live && billing.periodEnd ? `<p class="small" style="margin-bottom:16px">Current period ends ${esc(billing.periodEnd.slice(0, 10))}.</p>` : ""}
-${billing?.open ? `<div class="row" style="margin-bottom:16px">${billing.live ? "" : buyButton("starter", true, user) + buyButton("pro", true, user)}${billing.customerId ? `<form method="post" action="/billing/portal"><button class="btn ghost" type="submit">Manage billing</button></form>` : ""}</div>${billing.live ? "" : renewalNote()}` : ""}
+${billing?.open ? `<div class="row" style="margin-bottom:16px">${billing.live ? "" : buyButton("starter", true, user) + buyButton("pro", true, user)}${billing.customerId ? `<form method="post" action="/billing/portal"><button class="btn ghost" type="submit">Manage billing</button></form>` : ""}</div>${billing.live ? "" : renewalNote()}` : billing?.portal && billing.customerId ? `<div class="row" style="margin-bottom:16px"><form method="post" action="/billing/portal"><button class="btn ghost" type="submit">Manage billing</button></form></div>` : ""}
 <form method="post" action="/logout"><button class="btn ghost" type="submit">Sign out</button></form></section>
 </div>`, user, { path: "/dashboard", noindex: true });
 }

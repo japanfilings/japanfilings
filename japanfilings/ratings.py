@@ -93,7 +93,7 @@ def _pdf_text(pdf):
     with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
         f.write(pdf)
         f.flush()
-        return require_japanese(subprocess.run(["pdftotext", "-layout", f.name, "-"], capture_output=True, text=True, check=True).stdout)
+        return require_japanese(subprocess.run(["pdftotext", "-layout", "-enc", "UTF-8", f.name, "-"], capture_output=True, encoding="utf-8", check=True).stdout)
 
 
 def run(con, limit=None):

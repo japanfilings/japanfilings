@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     defaults:
       run:
@@ -73,6 +73,23 @@ jobs:
           echo "R2: $n objects, $(( total / 1048576 )) MB (limit $(( R2_MAX_BYTES / 1048576 )) MB)"
           echo "R2 backups: $n objects, $(( total / 1048576 )) MB" >> "$GITHUB_STEP_SUMMARY"
           [ "$total" -le "$R2_MAX_BYTES" ] || { echo "::error::R2 holds $(( total / 1048576 )) MB, over the 5 GB alarm (free tier 10 GB). See docs/DEPLOY.md."; exit 1; }
+      # The terms make a cancellation sent through the contact form effective when received, so a request
+      # whose email to the owner failed must not sit unseen. The Worker retries; this reports what is left.
+      - name: Contact requests reached the owner
+        id: contact
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_ID: 1f42ad71-cb75-41f1-9c98-98912606efdd
+        run: |
+          res=$(curl -sf -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "content-type: application/json" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$D1_ID/query" \
+            -d '{"sql":"SELECT COUNT(*) AS n FROM contact_messages WHERE notified = 0 AND created_at < strftime('"'"'%Y-%m-%dT%H:%M:%fZ'"'"', '"'"'now'"'"', '"'"'-30 minutes'"'"')"}') \
+            || { echo "::error::could not query D1"; exit 1; }
+          n=$(jq -r '.result[0].results[0].n' <<< "$res")
+          echo "contact requests not forwarded: $n"
+          [ "$n" = 0 ] || { echo "::error::$n contact request(s) were not emailed to the owner. Read them in D1: SELECT * FROM contact_messages WHERE notified = 0"; exit 1; }
       # GitHub disables schedules in a public repository after 60 days with no activity.
       - name: Keep the schedules alive
         id: keepalive

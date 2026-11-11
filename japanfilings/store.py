@@ -344,6 +344,12 @@ def link_issuer(con, rec):
 
 def upsert_large_holding(con, rec):
     link_issuer(con, rec)
+    if not rec.get("submit_date"):  # some amendments print no 提出日; EDINET's list has the date
+        try:
+            r = con.execute("SELECT substr(submit_datetime, 1, 10) FROM filings WHERE doc_id = ?", (rec["doc_id"],)).fetchone()
+        except sqlite3.OperationalError:
+            r = None
+        rec["submit_date"] = r[0] if r and r[0] else None
     if rec.get("report_kind") == "amendment" and not rec.get("amends_doc_id"):
         try:  # EDINET names the document an amendment corrects (parentDocID)
             p = con.execute("SELECT parent_doc_id FROM filings WHERE doc_id = ?", (rec["doc_id"],)).fetchone()

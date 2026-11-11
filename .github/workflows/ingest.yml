@@ -50,7 +50,7 @@ env:
 
 jobs:
   ingest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04  # pinned: ubuntu-latest changed image mid-week on 2026-11-10
     timeout-minutes: 355
     defaults:
       run:
@@ -126,7 +126,8 @@ jobs:
       # poppler-data holds the Japanese character maps; without it pdftotext reads EDINET PDFs as empty
       # (ubuntu-26.04 no longer has it preinstalled). The check below stops the run if text is not read.
       - run: |
-          sudo apt-get install -y --no-install-recommends poppler-utils poppler-data
+          sudo apt-get install -y --no-install-recommends poppler-utils poppler-data \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils poppler-data; }
           dpkg -s poppler-data >/dev/null
         timeout-minutes: 10
 

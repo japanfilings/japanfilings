@@ -142,3 +142,18 @@ def test_queue_reads_edinet_only_and_result_waits_for_publish(con):
     assert con.execute("SELECT published FROM refresh_work").fetchone()[0] == 1
 
 
+
+
+def test_a_parser_failing_most_new_filings_shows_as_a_gap(con):
+    # Every filing is "read" (status failed), so no gap by the usual rule; a broken parser must still show.
+    con.execute("CREATE TABLE voting_read (doc_id TEXT PRIMARY KEY, status TEXT NOT NULL, n_rows INTEGER, detail TEXT)")
+    filing(con, "AR", "120", day="2026-10-01")
+    for i in range(6):
+        filing(con, f"V{i}", "180", day="2026-10-15")
+        con.execute("INSERT INTO voting_read VALUES (?, 'failed', 0, NULL)", (f"V{i}",))
+    assert refresh._failing(con, "voting", "2026-10-20", "2026-10-19", set()) == 6
+    # A few odd failures among many good reads are not a broken parser.
+    for i in range(6, 20):
+        filing(con, f"V{i}", "180", day="2026-10-15")
+        con.execute("INSERT INTO voting_read VALUES (?, 'read', 3, NULL)", (f"V{i}",))
+    assert refresh._failing(con, "voting", "2026-10-20", "2026-10-19", set()) == 0

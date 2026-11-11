@@ -70,14 +70,26 @@ const sameOrigin = (c: any) => {
 
 const contact = (c: any) => c.env.CONTACT_EMAIL ?? null;
 
-app.get("/", async (c) => {
-  const db = c.env.DB;
-  const [stats, ev, toyota, trades, funds, brief] = await Promise.all([
-    db.prepare(
+// These counts read about 200,000 rows, so each data centre reuses them for 10 minutes instead of
+// counting on every visit (a crawler on the front page would otherwise cost D1 reads).
+async function siteStats(c: any): Promise<site.SiteStats> {
+  const cache = typeof caches === "undefined" ? null : (caches as any).default as Cache;
+  const key = new Request(origin(c.req.url) + "/__site-stats");
+  const hit = cache ? await cache.match(key) : null;
+  if (hit) return hit.json();
+  const stats = (await c.env.DB.prepare(
       "SELECT (SELECT COUNT(DISTINCT ticker) FROM annual_reports) AS companies, (SELECT COUNT(*) FROM annual_reports) AS reports, " +
         "(SELECT COUNT(*) FROM large_holdings) AS filings5, (SELECT COUNT(*) FROM ownership_events) AS events, " +
         "(SELECT COUNT(*) FROM cross_holdings WHERE held_ticker IS NOT NULL) AS crossHoldings, (SELECT MAX(submit_date) FROM large_holdings) AS latest, (SELECT MIN(submit_date) FROM large_holdings) AS earliest",
-    ).first<site.SiteStats>(),
+  ).first()) as site.SiteStats;
+  if (cache) c.executionCtx.waitUntil(cache.put(key, new Response(JSON.stringify(stats), { headers: { "content-type": "application/json", "cache-control": "max-age=600" } })));
+  return stats;
+}
+
+app.get("/", async (c) => {
+  const db = c.env.DB;
+  const [stats, ev, toyota, trades, funds, brief] = await Promise.all([
+    siteStats(c),
     data.ownershipEvents(db, "business", { types: ["new_stake", "stake_increase", "stated_may_make_proposals", "threshold_crossed", "exit_below_5pct"], limit: 8 }),
     data.crossHoldings(db, "7203"),
     data.holderTrades(db, { ticker: "4042", limit: 50 }),
@@ -87,8 +99,8 @@ app.get("/", async (c) => {
   return c.html(site.landing(c.get("user"), origin(c.req.url), stats!, ev.data, toyota, { trades, funds, brief, billingOpen: billing.billingOpen(c.env) }));
 });
 app.get("/pricing", async (c) => {
-  const row = await c.env.DB.prepare("SELECT MIN(submit_date) AS earliest FROM large_holdings").first<{ earliest: string | null }>();
-  return c.html(site.pricing(c.get("user"), row?.earliest ?? null, billing.billingOpen(c.env)));
+  const stats = await siteStats(c);
+  return c.html(site.pricing(c.get("user"), stats?.earliest ?? null, billing.billingOpen(c.env)));
 });
 app.get("/docs", (c) => c.html(site.docs(c.get("user"), OPENAPI, origin(c.req.url))));
 app.get("/sources", (c) => c.html(site.sources(c.get("user"))));
@@ -204,15 +216,19 @@ app.post("/login", async (c) => {
   if (!sameOrigin(c)) return c.text("Forbidden", 403);
   const email = String((await c.req.parseBody()).email ?? "").trim().toLowerCase();
   if (!accounts.validEmail(email)) return c.html(site.loginPage(null, "Please enter a valid email address.", undefined, billing.billingOpen(c.env)), 400);
-  const res = await accounts.startLogin(c.env, email, origin(c.req.url));
+  const res = await accounts.startLogin(c.env, email, origin(c.req.url), c.req.header("cf-connecting-ip") ?? "");
   const msg = res.throttled
     ? `We already sent several links to ${email}. Use the latest one, or try again in 15 minutes.`
     : res.sent ? `We sent a sign-in link to ${email}. It is valid for 20 minutes.` : res.devLink ? "" : "Email is not configured on this server yet.";
   return c.html(site.loginPage(null, msg, res.devLink, billing.billingOpen(c.env)));
 });
 
-app.get("/auth/verify", async (c) => {
-  const session = await accounts.finishLogin(c.env, c.req.query("token") ?? "");
+// Opening the link only shows a button: mail scanners that open links must not use up the one-time link.
+app.get("/auth/verify", (c) => c.html(site.verifyPage(c.req.query("token") ?? "")));
+
+app.post("/auth/verify", async (c) => {
+  if (!sameOrigin(c)) return c.text("Forbidden", 403);
+  const session = await accounts.finishLogin(c.env, String((await c.req.parseBody()).token ?? ""));
   if (!session) return c.html(site.loginPage(null, "That link has expired or was already used. Request a new one.", undefined, billing.billingOpen(c.env)), 400);
   setCookie(c, accounts.SESSION_COOKIE, session, {
     httpOnly: true, secure: new URL(c.req.url).protocol === "https:", sameSite: "Lax", path: "/", maxAge: 30 * 86400,
@@ -284,7 +300,8 @@ app.post("/billing/portal", async (c) => {
   const user = c.get("user");
   if (!user) return c.redirect("/login", 303);
   if (!sameOrigin(c)) return c.text("Forbidden", 403);
-  if (!billing.billingOpen(c.env)) return c.text(NOT_OPEN, 503);
+  // Not tied to sales being open: a subscriber can always manage or cancel while Paddle is set up.
+  if (!billing.provider.configured(c.env)) return c.text(NOT_OPEN, 503);
   const view = await billing.billingView(c.env, user.id);
   if (!view.customerId) return c.redirect("/pricing", 303);
   try {
@@ -642,6 +659,7 @@ export default {
       ctx.waitUntil(rebuildFacts(env.DB).then((r) => console.log("facts", JSON.stringify(r))).catch((e) => console.error("facts", e)));
       ctx.waitUntil(oauth.purgeOAuth(env.DB).catch((e) => console.error("oauth purge", e)));
       ctx.waitUntil(contactForm.purge(env.DB).catch((e) => console.error("contact purge", e)));
+      ctx.waitUntil(accounts.purgeLoginTokens(env.DB).catch((e) => console.error("login purge", e)));
     }
   },
 };

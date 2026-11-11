@@ -427,6 +427,7 @@ async function recordOnce(db: D1Database, name: string, eventId: string, stateme
 
 export type BillingView = {
   open: boolean;
+  portal: boolean; // Paddle is set up, so a subscriber can manage billing even while sales are closed
   live: boolean; // has a subscription that is still billing
   customerId: string | null;
   status: string | null;
@@ -445,6 +446,7 @@ export async function billingView(env: BillingEnv, userId: string): Promise<Bill
     .first<{ customer_id: string | null; status: string; current_period_end: string | null; cancel_at: string | null }>();
   return {
     open: billingOpen(env),
+    portal: provider.configured(env),
     live: !!row && LIVE.has(row.status) && (!row.current_period_end || row.current_period_end > now),
     customerId: row?.customer_id ?? null,
     status: row?.status ?? null,

@@ -9,6 +9,14 @@ const LEX = new URL("../../japanfilings/private/lexicon.json", import.meta.url);
 const WITHHELD = existsSync(LEX) ? new RegExp(JSON.parse(readFileSync(LEX, "utf8")).withheld.join("|")) : /(?!)/;
 
 const BASE = process.env.BASE ?? "http://localhost:8788";
+
+// Opening a sign-in link shows a button (mail scanners must not use it up); the button POSTs the token.
+async function verifyLink(link, headers = {}) {
+  const u = new URL(link);
+  const page = await fetch(link, { headers });
+  if (!(await page.text()).includes('action="/auth/verify"')) throw new Error("no sign-in button on " + link);
+  return fetch(u.origin + "/auth/verify", { method: "POST", redirect: "manual", headers: { ...headers, origin: u.origin, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: u.searchParams.get("token") }) });
+}
 const get = (path, key) => fetch(BASE + path, { headers: key ? { authorization: `Bearer ${key}` } : {} });
 const mcp = (key, body) =>
   fetch(BASE + "/mcp", { method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -102,10 +110,11 @@ test("sign up by email link, create a key, use it", async () => {
   });
   const link = (await login.text()).match(/href="([^"]*\/auth\/verify\?token=[^"]+)"/)?.[1]?.replace(/&amp;/g, "&");
   assert.ok(link, "dev sign-in link shown");
-  const verify = await fetch(link, { redirect: "manual" });
+  assert.equal((await fetch(link)).status, 200, "opening the link does not use it");
+  const verify = await verifyLink(link);
   assert.equal(verify.status, 302);
   const cookie = verify.headers.get("set-cookie").split(";")[0];
-  assert.equal((await fetch(link, { redirect: "manual" })).status, 400, "link is single-use");
+  assert.equal((await verifyLink(link)).status, 400, "link is single-use");
   const dash = await fetch(BASE + "/dashboard", { headers: { cookie } });
   assert.match(await dash.text(), new RegExp(email.replace(".", "\\.")));
   const created = await fetch(BASE + "/dashboard/key", { method: "POST", headers: { cookie, origin: BASE } });
@@ -363,4 +372,11 @@ test("voting results never carry candidate or officer names", async () => {
   assert.ok(v.data.length > 0);
   assert.ok(v.data.every((r) => !("candidate_ja" in r)));
   assert.ok(v.data.every((r) => !/候補者\S{1,10}氏|選任\s+\S{1,4}\s+\S{1,4}$/.test(r.proposal_title_ja ?? "")));
+});
+
+test("sign-in links are limited per network as well as per address", async () => {
+  const ip = `203.0.113.${Math.floor(Math.random() * 250)}`;
+  const send = (i) => fetch(BASE + "/login", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": ip }, body: new URLSearchParams({ email: `net${i}-${Date.now()}@example.test` }) }).then((r) => r.text());
+  for (let i = 0; i < 10; i++) assert.doesNotMatch(await send(i), /already sent several links/);
+  assert.match(await send(10), /already sent several links/);
 });

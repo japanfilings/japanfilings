@@ -21,15 +21,29 @@ export function validEmail(email: string) {
 const MAX_LINKS_PER_WINDOW = 3;
 const LINK_WINDOW_MIN = 15;
 
-export async function startLogin(env: AccountEnv, email: string, origin: string): Promise<{ sent: boolean; devLink?: string; throttled?: boolean }> {
+const MAX_LINKS_PER_NETWORK_HOUR = 10;
+
+export async function startLogin(env: AccountEnv, email: string, origin: string, ip = ""): Promise<{ sent: boolean; devLink?: string; throttled?: boolean }> {
   // A few links per address per window, so the form cannot be used to flood someone's inbox.
   const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM login_tokens WHERE email = ?1 AND expires_at > ?2")
     .bind(email, isoIn((LINK_TTL_MIN - LINK_WINDOW_MIN) * 60_000))
     .first<{ n: number }>();
   if ((recent?.n ?? 0) >= MAX_LINKS_PER_WINDOW) return { sent: false, throttled: true };
+  // And a few per network per hour, so a script cannot send links to many addresses and use up the
+  // email quota that sign-in, contact forwarding and owner alerts share. The hash changes daily.
+  // Cloudflare always gives the visitor's address in production; a local test server gives none or a
+  // loopback address, and is not limited.
+  const limited = ip && ip !== "127.0.0.1" && ip !== "::1";
+  const ipHash = limited ? await sha256Hex(`${new Date().toISOString().slice(0, 10)}:${ip}`) : null;
+  if (ipHash) {
+    const fromNetwork = await env.DB.prepare("SELECT COUNT(*) AS n FROM login_tokens WHERE ip_hash = ?1 AND expires_at > ?2")
+      .bind(ipHash, isoIn((LINK_TTL_MIN - 60) * 60_000))
+      .first<{ n: number }>();
+    if ((fromNetwork?.n ?? 0) >= MAX_LINKS_PER_NETWORK_HOUR) return { sent: false, throttled: true };
+  }
   const token = randomToken();
-  await env.DB.prepare("INSERT INTO login_tokens (token_hash, email, expires_at) VALUES (?1, ?2, ?3)")
-    .bind(await sha256Hex(token), email, isoIn(LINK_TTL_MIN * 60_000))
+  await env.DB.prepare("INSERT INTO login_tokens (token_hash, email, expires_at, ip_hash) VALUES (?1, ?2, ?3, ?4)")
+    .bind(await sha256Hex(token), email, isoIn(LINK_TTL_MIN * 60_000), ipHash)
     .run();
   const link = `${origin}/auth/verify?token=${token}`;
   if (env.RESEND_API_KEY && env.MAIL_FROM) {
@@ -46,6 +60,11 @@ export async function startLogin(env: AccountEnv, email: string, origin: string)
     return { sent: res.ok };
   }
   return { sent: false, devLink: env.DEV_SHOW_LINKS === "1" ? link : undefined };
+}
+
+/** Daily: sign-in links a day past their expiry go, with the address they were sent to. */
+export async function purgeLoginTokens(db: D1Database) {
+  await db.prepare("DELETE FROM login_tokens WHERE expires_at < ?1").bind(isoIn(-86_400_000)).run();
 }
 
 /** Consumes a link and returns a new session token, creating the user on first sign-in. */

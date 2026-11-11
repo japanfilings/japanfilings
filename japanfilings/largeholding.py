@@ -35,8 +35,8 @@ PURPOSE_TAGS = [
 
 
 def pdf_to_text(pdf_path: str) -> str:
-    return require_japanese(subprocess.run(["pdftotext", "-layout", pdf_path, "-"],
-                                           check=True, capture_output=True, text=True).stdout)
+    return require_japanese(subprocess.run(["pdftotext", "-layout", "-enc", "UTF-8", pdf_path, "-"],
+                                           check=True, capture_output=True, encoding="utf-8").stdout)
 
 
 def _bracket_field(lines, label):

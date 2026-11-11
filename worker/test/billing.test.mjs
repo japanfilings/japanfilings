@@ -13,6 +13,14 @@ import test, { after, before } from "node:test";
 import { promisify } from "node:util";
 
 const BASE = process.env.BASE ?? "http://localhost:8788";
+
+// Opening a sign-in link shows a button (mail scanners must not use it up); the button POSTs the token.
+async function verifyLink(link, headers = {}) {
+  const u = new URL(link);
+  const page = await fetch(link, { headers });
+  if (!(await page.text()).includes('action="/auth/verify"')) throw new Error("no sign-in button on " + link);
+  return fetch(u.origin + "/auth/verify", { method: "POST", redirect: "manual", headers: { ...headers, origin: u.origin, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: u.searchParams.get("token") }) });
+}
 const SECRET = process.env.PADDLE_WEBHOOK_SECRET;
 // .dev.vars for the open mode. DEV_SHOW_LINKS=1 is what allows the mock API base.
 // PADDLE_API_KEY=test PADDLE_WEBHOOK_SECRET=test_only_not_a_secret PADDLE_HOSTED_CHECKOUT_ID=hsc_test
@@ -48,7 +56,7 @@ async function signIn() {
   const email = `billing-${randomUUID()}@example.test`;
   const login = await fetch(BASE + "/login", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ email }) });
   const link = (await login.text()).match(/href="([^"]*\/auth\/verify\?token=[^"]+)"/)[1].replace(/&amp;/g, "&");
-  const verify = await fetch(link, { redirect: "manual" });
+  const verify = await verifyLink(link);
   return verify.headers.get("set-cookie").split(";")[0];
 }
 const form = (cookie, path, fields = {}) =>

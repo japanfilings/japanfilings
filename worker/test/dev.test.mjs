@@ -6,6 +6,14 @@ import { createHash, randomBytes } from "node:crypto";
 import test from "node:test";
 
 const BASE = process.env.BASE ?? "http://localhost:8788";
+
+// Opening a sign-in link shows a button (mail scanners must not use it up); the button POSTs the token.
+async function verifyLink(link, headers = {}) {
+  const u = new URL(link);
+  const page = await fetch(link, { headers });
+  if (!(await page.text()).includes('action="/auth/verify"')) throw new Error("no sign-in button on " + link);
+  return fetch(u.origin + "/auth/verify", { method: "POST", redirect: "manual", headers: { ...headers, origin: u.origin, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: u.searchParams.get("token") }) });
+}
 const PRO = process.env.PRO_KEY;
 const get = (path, key) => fetch(BASE + path, { headers: key ? { authorization: `Bearer ${key}` } : {} });
 const rpc = (token, method, params, id = 1) =>
@@ -15,7 +23,7 @@ async function signIn() {
   const email = `dev${Date.now()}${Math.floor(Math.random() * 1e6)}@example.com`;
   const res = await fetch(BASE + "/login", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: BASE }, body: `email=${encodeURIComponent(email)}` });
   const link = (await res.text()).match(/href="([^"]*\/auth\/verify\?token=[^"]+)"/)[1].replace(/&amp;/g, "&");
-  const verify = await fetch(link, { redirect: "manual" });
+  const verify = await verifyLink(link);
   return { email, link, verify, cookie: verify.headers.get("set-cookie").split(";")[0] };
 }
 async function freshKey() {
@@ -303,7 +311,7 @@ test("OAuth sign-in resumes the request; the client name is escaped; cross-site 
   const email = `resume${Date.now()}@example.com`;
   const login = await post("/login", `email=${encodeURIComponent(email)}`, { origin: BASE });
   const link = (await login.text()).match(/href="([^"]*\/auth\/verify\?token=[^"]+)"/)[1].replace(/&amp;/g, "&");
-  const verify = await fetch(link, { redirect: "manual", headers: { cookie: pending } });
+  const verify = await verifyLink(link, { cookie: pending });
   const loc = verify.headers.get("location");
   assert.ok(loc.startsWith("/oauth/authorize?"), loc);
   const cookie = verify.headers.get("set-cookie").split(";")[0];
@@ -323,7 +331,7 @@ test("OAuth sign-in resumes the request; the client name is escaped; cross-site 
 async function signInWithCookie(pendingValue) {
   const login = await post("/login", `email=t${Date.now()}x@example.com`, { origin: BASE });
   const link = (await login.text()).match(/href="([^"]*\/auth\/verify\?token=[^"]+)"/)[1].replace(/&amp;/g, "&");
-  return (await fetch(link, { redirect: "manual", headers: { cookie: `jf_oauth_pending=${encodeURIComponent(pendingValue)}` } })).headers.get("location");
+  return (await verifyLink(link, { cookie: `jf_oauth_pending=${encodeURIComponent(pendingValue)}` })).headers.get("location");
 }
 
 test("OAuth full flow: token works on MCP only, no secrets stored in clear", { skip: !oauthOn }, async () => {
