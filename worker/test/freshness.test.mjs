@@ -192,3 +192,11 @@ test("API: latest filings answers", { skip: !PRO }, async () => {
   const b = await (await api("/v1/filings/latest?limit=1", FREE)).json();
   assert.ok(Array.isArray(b.data)); assert.ok("list_checked_at" in b); assert.equal(typeof b.stale, "boolean");
 });
+
+test("one failed attempt within the target is not a failed dataset; a lasting one is", () => {
+  const now = new Date("2026-11-11T05:06:00Z"); // Wednesday 14:06 JST, in the business window
+  const blip = { last_success_at: "2026-11-11T05:00:40Z", last_attempt_at: "2026-11-11T05:05:40Z", last_error: "EDINET HTTP 403", newest_source_date: "2026-11-11" };
+  assert.equal(m.classify(def("filings"), blip, now).status, "fresh");
+  const lasting = { ...blip, last_success_at: "2026-11-11T04:30:00Z" };
+  assert.equal(m.classify(def("filings"), lasting, now).status, "failed");
+});

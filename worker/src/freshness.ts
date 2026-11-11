@@ -49,10 +49,12 @@ const days = (a: string, now: Date) => (now.getTime() - Date.parse(a.slice(0, 10
 
 export function classify(def: DatasetDef, row: any, now: Date): { status: Status; reasons: string[] } {
   if (!row?.last_success_at) return row?.last_error ? { status: "failed", reasons: ["no_successful_run"] } : { status: "late", reasons: ["no_run_recorded"] };
-  if (row.last_error && row.last_attempt_at > row.last_success_at) return { status: "failed", reasons: ["last_run_failed"] };
-  const reasons: string[] = [];
   const last = new Date(row.last_success_at);
   const elapsed = def.calendar === "business" ? businessMinutes(last, now) : (now.getTime() - last.getTime()) / 60_000;
+  // One failed attempt while the last success is still within the target is a blip (EDINET refuses a
+  // request now and then and the next run succeeds), not a failed dataset.
+  if (row.last_error && row.last_attempt_at > row.last_success_at && elapsed > def.target_minutes) return { status: "failed", reasons: ["last_run_failed"] };
+  const reasons: string[] = [];
   if (elapsed > def.target_minutes + graceMinutes(def.target_minutes)) reasons.push("run_overdue");
   const newest = normDate(row.newest_source_date);
   if (def.max_source_age_days && (!newest || days(newest, now) > def.max_source_age_days)) reasons.push("source_too_old");
