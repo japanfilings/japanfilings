@@ -19,8 +19,9 @@
 // Nothing here logs or stores card data, names or addresses. The checkout does not even receive
 // the user's email from us; the only link between the two systems is our user ID in custom_data.
 import type { Plan } from "./data";
+import { legalReady, type LegalEnv } from "./site";
 
-export type BillingEnv = {
+export type BillingEnv = LegalEnv & {
   DB: D1Database;
   PADDLE_API_KEY?: string;
   PADDLE_WEBHOOK_SECRET?: string;
@@ -30,6 +31,8 @@ export type BillingEnv = {
   PADDLE_ENV?: string; // "sandbox" uses Paddle's sandbox; anything else is live
   PADDLE_API_BASE?: string; // local tests only; honoured only with DEV_SHOW_LINKS=1
   DEV_SHOW_LINKS?: string;
+  RESEND_API_KEY?: string; // for the owner alert when a cancellation at Paddle fails
+  MAIL_FROM?: string;
 };
 
 export type PaidPlan = Exclude<Plan, "free">;
@@ -192,7 +195,21 @@ export const paddle: BillingProvider = {
 };
 
 export const provider: BillingProvider = paddle;
-export const billingOpen = (env: BillingEnv) => provider.configured(env);
+// Sales open only when Paddle is set up AND the legal notice is on, so entering the Paddle values
+// early can never start selling before the paid terms are shown.
+// Plans are not sold to the EU, the EEA, the UK or Switzerland (with their territories that have their own
+// country codes). Cloudflare gives the visitor's country; locally, tests send CF-IPCountry instead.
+const BLOCKED = new Set(("AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE " +
+  "IS LI NO GB CH AX GF GP MQ RE YT MF GI IM JE GG").split(" "));
+export const BLOCKED_REGION = "Paid plans are not sold in the EU, the EEA, the UK or Switzerland.";
+export function blockedRegion(env: BillingEnv, req: Request) {
+  const cf = (req as Request & { cf?: { country?: string } }).cf?.country;
+  const header = req.headers.get("cf-ipcountry");
+  const country = env.DEV_SHOW_LINKS === "1" && header ? header : cf ?? header;
+  return !!country && BLOCKED.has(country.toUpperCase());
+}
+
+export const billingOpen = (env: BillingEnv) => provider.configured(env) && legalReady(env);
 export const providerKey = (env: BillingEnv) => `${provider.name}_${env.PADDLE_ENV === "sandbox" ? "sandbox" : "live"}`;
 
 // Paddle's guidance is to keep access while a payment is being retried; a failed recovery ends in
@@ -224,7 +241,8 @@ export async function reconcileEntitlements(env: BillingEnv, userId?: string): P
 type Outcome = { status: number; body: Record<string, unknown> };
 
 export async function handleWebhook(env: BillingEnv, rawBody: string, headers: Headers): Promise<Outcome> {
-  if (!billingOpen(env)) return { status: 503, body: { error: "Paid plans are not open yet." } };
+  // Events are processed whenever Paddle is set up, even if sales are paused, so no change is lost.
+  if (!provider.configured(env)) return { status: 503, body: { error: "Paid plans are not open yet." } };
   const verdict = await provider.verify(env, rawBody, headers, Math.floor(Date.now() / 1000));
   if (!verdict.ok) return { status: 401, body: { error: verdict.reason === "stale" ? "Stale timestamp." : "Invalid signature." } };
 
@@ -264,7 +282,23 @@ export async function handleWebhook(env: BillingEnv, rawBody: string, headers: H
   }
   // A user ID we do not have yet: do not consume the event ID, so a retry can link the payment after
   // account creation catches up.
-  if (!user) return { status: 503, body: { error: "Subscription user is not registered yet." } };
+  if (!user) {
+    // A refund after the account was deleted (billing records are kept): no plan is left to change,
+    // but the subscription must still be cancelled at Paddle so it is not charged again.
+    // Any later event of a subscription whose account was deleted is recorded, not retried, and a
+    // subscription still live is cancelled (the terms promise this on deletion).
+    if (existing) {
+      const action = ev.kind === "revoke" ? ev.status + "_deleted_account" : "deleted_account";
+      if (await recordOnce(db, name, ev.id, [recordEvent, audit(action, null)])) return { status: 200, body: { ok: true, duplicate: true } };
+      const mustCancel = ev.kind === "revoke" || LIVE.has(ev.status);
+      const cancelled = !mustCancel || (await cancelAtPaddle(env, db, name, now, ev, userId));
+      if (mustCancel && cancelled && ev.kind !== "revoke")
+        await alertOwner(env, `Cancelled after account deletion: ${ev.subscriptionId}`,
+          `Subscription ${ev.subscriptionId} belonged to a deleted account and was still live, so it was cancelled at Paddle.\n\nIf a renewal was charged after the deletion request, refund it in full.\n`);
+      return { status: 200, body: { ok: true, action, ...(cancelled ? {} : { cancelled: false }) } };
+    }
+    return { status: 503, body: { error: "Subscription user is not registered yet." } };
+  }
 
   const live = LIVE.has(ev.status);
   const paid = provider.planForPrices(env, ev.priceIds);
@@ -322,7 +356,39 @@ export async function handleWebhook(env: BillingEnv, rawBody: string, headers: H
     ];
   }
   if (await recordOnce(db, name, ev.id, statements)) return { status: 200, body: { ok: true, duplicate: true } };
+  // The terms promise that a refunded or charged-back plan is not charged again, so the subscription is
+  // cancelled at Paddle too. A failure is audited as cancel_failed for the owner to cancel by hand.
+  if (ev.kind === "revoke" && !(await cancelAtPaddle(env, db, name, now, ev, user.id))) return { status: 200, body: { ok: true, action, cancelled: false } };
   return { status: 200, body: { ok: true, action } };
+}
+
+/** Email the owner (the support address). Never throws. */
+async function alertOwner(env: BillingEnv, subject: string, text: string) {
+  if (!(env.RESEND_API_KEY && env.MAIL_FROM && env.CONTACT_EMAIL)) return;
+  await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify({ from: env.MAIL_FROM, to: env.CONTACT_EMAIL, subject: `[JapanStake] ${subject}`, text }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => null);
+}
+
+/** Cancel a subscription at Paddle at once (refunded, charged back, or its account deleted). On failure the owner is emailed
+ *  and the audit row cancel_failed is written: cancel it by hand in Paddle (docs/DEPLOY.md). A
+ *  subscription Paddle already cancelled also fails here, so check its state there first. */
+async function cancelAtPaddle(env: BillingEnv, db: D1Database, name: string, now: string, ev: BillingEvent, userId: string) {
+  try {
+    await paddlePost(env, `/subscriptions/${encodeURIComponent(ev.subscriptionId)}/cancel`, { effective_from: "immediately" });
+    return true;
+  } catch (err) {
+    console.error(err);
+    await db
+      .prepare("INSERT INTO billing_audit (at, provider, event_id, event_type, subscription_id, user_id, action, old_plan, new_plan) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'cancel_failed', NULL, NULL)")
+      .bind(now, name, ev.id, ev.type, ev.subscriptionId, userId)
+      .run();
+    await alertOwner(env, `Cancel at Paddle failed: ${ev.subscriptionId}`, `${ev.kind === "revoke" ? `A ${ev.status === CHARGED_BACK ? "chargeback" : "full refund"} was recorded` : "An event arrived for a deleted account"} for subscription ${ev.subscriptionId}, but cancelling it at Paddle failed.\n\nOpen Paddle > Subscriptions > ${ev.subscriptionId}. If it is still active, cancel it immediately. If a renewal was already charged, refund it in full.\n`);
+    return false;
+  }
 }
 
 /** Recompute the user's plan from their best live subscription, copy it to their keys, and audit it. */

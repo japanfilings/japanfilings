@@ -459,7 +459,7 @@ jobs:
           npx wrangler d1 export japanfilings --remote --no-schema --table users --table api_keys --table webhooks --table usage --table billing_subscriptions --table billing_events --table billing_audit --table oauth_clients --table oauth_tokens --output "$RUNNER_TEMP/accounts.sql" >/dev/null
           openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_PASSPHRASE -in "$RUNNER_TEMP/accounts.sql" -out "$RUNNER_TEMP/accounts.sql.enc"
           [ "$(stat -c %s "$RUNNER_TEMP/accounts.sql.enc")" -le 52428800 ] || { echo "::error::account backup over 50 MB, not uploaded"; rm -f "$RUNNER_TEMP/accounts.sql" "$RUNNER_TEMP/accounts.sql.enc"; exit 1; }
-          npx wrangler r2 object put "$R2_BUCKET/accounts/$(( 10#$(date -u -d "$TODAY" +%V) % 8 )).sql.enc" --remote --file "$RUNNER_TEMP/accounts.sql.enc" >/dev/null   # 0..7
+          npx wrangler r2 object put "$R2_BUCKET/accounts/$(( $(date -u -d "$TODAY" +%s) / 604800 % 8 )).sql.enc" --remote --file "$RUNNER_TEMP/accounts.sql.enc" >/dev/null   # 0..7 by weeks since 1970, so a slot is reused after 8 weeks even across a new year
           rm -f "$RUNNER_TEMP/accounts.sql" "$RUNNER_TEMP/accounts.sql.enc"
 
       # A failed run emails the owner (docs/DEPLOY.md). Sources may fail alone above; this makes it visible.

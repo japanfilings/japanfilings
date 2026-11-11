@@ -2,6 +2,8 @@ name = "japanfilings-api"
 main = "src/index.ts"
 workers_dev = false  # the site is served only on japanstake.com (the zone's rate limit does not cover workers.dev)
 compatibility_date = "2026-10-01"
+# Static files (self-hosted fonts and their licences) are served before the Worker; static requests are free.
+assets = { directory = "./public" }
 routes = [{ pattern = "japanstake.com", custom_domain = true }, { pattern = "www.japanstake.com", custom_domain = true }]
 
 # PUBLIC_ORIGIN (https://japanstake.com) is a Worker secret, so local dev and tests keep their own origin.

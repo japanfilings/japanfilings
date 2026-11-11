@@ -17,6 +17,8 @@ const SECRET = process.env.PADDLE_WEBHOOK_SECRET;
 // .dev.vars for the open mode. DEV_SHOW_LINKS=1 is what allows the mock API base.
 // PADDLE_API_KEY=test PADDLE_WEBHOOK_SECRET=test_only_not_a_secret PADDLE_HOSTED_CHECKOUT_ID=hsc_test
 // PADDLE_PRICE_STARTER=pri_starter PADDLE_PRICE_PRO=pri_pro PADDLE_ENV=sandbox PADDLE_API_BASE=http://127.0.0.1:8799
+// LEGAL_PAGE_ENABLED=true LEGAL_PROVIDER_NAME=t LEGAL_START_OF_SERVICE=t LEGAL_CANCELLATION=t LEGAL_REFUNDS=t
+// (sales stay closed without the legal notice, even with every PADDLE_* value set)
 // (Business is no longer sold: a leftover PADDLE_PRICE_BUSINESS is ignored and its price grants nothing.)
 const MOCK_PORT = 8799;
 
@@ -187,6 +189,22 @@ if (!SECRET) {
     assert.equal(r.status, 403);
   });
 
+  test("open: checkout is refused from the EU, EEA, UK and Switzerland; renewal terms are shown", async () => {
+    const pricing = await (await fetch(BASE + "/pricing")).text();
+    assert.match(pricing, /renews automatically every month/);
+    assert.match(pricing, /href="\/legal"/);
+    assert.match(await (await fetch(BASE + "/legal")).text(), /契約期間・自動更新/);
+    const cookie = await signIn();
+    const before = calls.length;
+    for (const country of ["DE", "GB", "CH", "NO", "re"]) {
+      const res = await fetch(BASE + "/billing/checkout", { method: "POST", redirect: "manual", headers: { cookie, "cf-ipcountry": country, "content-type": "application/x-www-form-urlencoded" }, body: "plan=pro" });
+      assert.equal(res.status, 403, country);
+    }
+    assert.equal(calls.length, before, "no transaction is created");
+    const ok = await fetch(BASE + "/billing/checkout", { method: "POST", redirect: "manual", headers: { cookie, "cf-ipcountry": "US", "content-type": "application/x-www-form-urlencoded" }, body: "plan=pro" });
+    assert.equal(ok.status, 303);
+  });
+
   test("valid signature upgrades the existing key without rotation", async () => {
     const { key, userId, sub } = await subscriber();
     assert.equal(await planOf(key), "starter");
@@ -322,7 +340,11 @@ if (!SECRET) {
     }
     assert.equal((await (await deliver(adjustment(sub))).json()).action, "refunded");
     assert.equal(await planOf(key), "none");
-    // Paddle leaves the subscription active: its next update in the same period does not restore access.
+    // The subscription is cancelled at Paddle at once, so it is not charged again.
+    const cancel = calls.at(-1);
+    assert.equal(cancel.path, `/subscriptions/${sub}/cancel`);
+    assert.deepEqual(cancel.body, { effective_from: "immediately" });
+    // Should Paddle still send an update the subscription active: its next update in the same period does not restore access.
     const same = await (await deliver(event("subscription.updated", sub, userId, { periodEnd }))).json();
     assert.equal(same.action, "revoked_kept");
     assert.equal(await planOf(key), "none");
@@ -333,6 +355,30 @@ if (!SECRET) {
     assert.equal(await planOf(key), "none");
     // A refund of something we never linked is acknowledged.
     assert.equal((await (await deliver(adjustment("sub_" + randomUUID()))).json()).ignored, true);
+  });
+
+  test("a refund after the account was deleted still cancels the subscription at Paddle", async () => {
+    const { userId, sub } = await subscriber();
+    await deliver(event("subscription.created", sub, userId));
+    await sql(`DELETE FROM api_keys WHERE user_id = '${userId}'`);
+    await sql(`DELETE FROM users WHERE id = '${userId}'`);
+    const res = await deliver(adjustment(sub));
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).action, "refunded_deleted_account");
+    assert.equal(calls.at(-1).path, `/subscriptions/${sub}/cancel`);
+  });
+
+  test("a live subscription of a deleted account is recorded and cancelled, not retried", async () => {
+    const { userId, sub } = await subscriber();
+    await deliver(event("subscription.created", sub, userId));
+    await sql(`DELETE FROM api_keys WHERE user_id = '${userId}'`);
+    await sql(`DELETE FROM users WHERE id = '${userId}'`);
+    const before = calls.length;
+    const res = await deliver(event("subscription.updated", sub, userId));
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).action, "deleted_account");
+    assert.equal(calls.length, before + 1);
+    assert.equal(calls.at(-1).path, `/subscriptions/${sub}/cancel`);
   });
 
   test("live subscriptions do not grant sandbox access", async () => {

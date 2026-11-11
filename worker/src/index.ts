@@ -42,8 +42,8 @@ app.use(
   secureHeaders({
     contentSecurityPolicy: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["https://fonts.gstatic.com"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      fontSrc: ["'self'"],
       imgSrc: ["'self'", "data:"],
       scriptSrc: ["'none'"],
       // Checkout and portal buttons POST here and redirect to Paddle; browsers apply form-action to the redirect too.
@@ -58,6 +58,7 @@ app.use("/v1/*", cors({ origin: "*", allowHeaders: ["Authorization", "X-API-Key"
 
 app.use("*", async (c, next) => {
   c.set("user", await accounts.currentUser(c.env, getCookie(c, accounts.SESSION_COOKIE)));
+  site.setLegalLink(site.legalReady(c.env));
   await next();
 });
 
@@ -197,22 +198,22 @@ app.get("/sitemap.xml", async (c) => {
   );
 });
 
-app.get("/login", (c) => (c.get("user") ? c.redirect("/dashboard") : c.html(site.loginPage(null))));
+app.get("/login", (c) => (c.get("user") ? c.redirect("/dashboard") : c.html(site.loginPage(null, "", undefined, billing.billingOpen(c.env)))));
 
 app.post("/login", async (c) => {
   if (!sameOrigin(c)) return c.text("Forbidden", 403);
   const email = String((await c.req.parseBody()).email ?? "").trim().toLowerCase();
-  if (!accounts.validEmail(email)) return c.html(site.loginPage(null, "Please enter a valid email address."), 400);
+  if (!accounts.validEmail(email)) return c.html(site.loginPage(null, "Please enter a valid email address.", undefined, billing.billingOpen(c.env)), 400);
   const res = await accounts.startLogin(c.env, email, origin(c.req.url));
   const msg = res.throttled
     ? `We already sent several links to ${email}. Use the latest one, or try again in 15 minutes.`
     : res.sent ? `We sent a sign-in link to ${email}. It is valid for 20 minutes.` : res.devLink ? "" : "Email is not configured on this server yet.";
-  return c.html(site.loginPage(null, msg, res.devLink));
+  return c.html(site.loginPage(null, msg, res.devLink, billing.billingOpen(c.env)));
 });
 
 app.get("/auth/verify", async (c) => {
   const session = await accounts.finishLogin(c.env, c.req.query("token") ?? "");
-  if (!session) return c.html(site.loginPage(null, "That link has expired or was already used. Request a new one."), 400);
+  if (!session) return c.html(site.loginPage(null, "That link has expired or was already used. Request a new one.", undefined, billing.billingOpen(c.env)), 400);
   setCookie(c, accounts.SESSION_COOKIE, session, {
     httpOnly: true, secure: new URL(c.req.url).protocol === "https:", sameSite: "Lax", path: "/", maxAge: 30 * 86400,
   });
@@ -265,6 +266,7 @@ app.post("/billing/checkout", async (c) => {
   if (!user) return c.redirect("/login", 303);
   if (!sameOrigin(c)) return c.text("Forbidden", 403);
   if (!billing.billingOpen(c.env)) return c.text(NOT_OPEN, 503);
+  if (billing.blockedRegion(c.env, c.req.raw)) return c.text(billing.BLOCKED_REGION, 403);
   const plan = String((await c.req.parseBody()).plan ?? "");
   if (plan !== "starter" && plan !== "pro") return c.text("Unknown plan.", 400);
   // A second subscription would bill twice, so subscribers go to the portal instead.
@@ -633,6 +635,7 @@ export default {
     ctx.waitUntil(webhooks.deliverAll(env.DB));
     ctx.waitUntil(ondemand.cron(env, new Date(event.scheduledTime)).catch((e) => console.error("ondemand", e)));
     ctx.waitUntil(billing.reconcileEntitlements(env).catch((e) => console.error("billing reconcile", e)));
+    ctx.waitUntil(contactForm.retryForward(env).catch((e) => console.error("contact retry", e)));
     // Once a day at 21:00 JST, after the ingest window: rebuild screener facts, purge expired OAuth rows.
     const at = new Date(event.scheduledTime);
     if (event.cron === "daily" || (at.getUTCHours() === 12 && at.getUTCMinutes() < 5)) {

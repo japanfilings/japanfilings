@@ -341,14 +341,30 @@ npx wrangler d1 time-travel restore japanfilings --timestamp <UNIX時刻>
 
 **口座情報の復元**:
 ```sh
-npx wrangler r2 object get japanfilings-backups/accounts/<日付>.sql.enc --remote --file a.enc
+npx wrangler r2 object get japanfilings-backups/accounts/<0..7>.sql.enc --remote --file a.enc
 openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_PASSPHRASE -in a.enc -out a.sql
 npx wrangler d1 execute japanfilings --remote --file a.sql
 rm a.enc a.sql
 ```
 パスフレーズを失うと、このバックアップは読めません。
 
-**R2 は D1 と同じアカウントです。** アカウント喪失に備え、月1回 `latest.tar.gz` と最新の `accounts/*.enc` を Mac か別の場所へコピーしてください。
+**R2 は D1 と同じアカウントです。** アカウント喪失に備え、月1回 `latest.tar.gz` と最新の `accounts/*.enc` を Mac か別の場所へコピーしてください。手元のコピーは最新の1つだけ残し、古いものは削除します(プライバシーポリシーで最長1年と約束しています)。
+
+**口座情報を復元した後:** バックアップの日以降に削除依頼のあったアカウントを、もう一度削除します。復元で、削除済みのデータが戻るためです。
+
+### 返金・チャージバックとアカウント削除
+
+- 全額返金・チャージバックが承認されると、Worker が Paddle の定期購読を即時解約します(API キーに Subscriptions の書込権限が必要)。
+- 解約に失敗すると、support 宛に「Cancel at Paddle failed」のメールが届き、`billing_audit` に `cancel_failed` が残ります。Paddle の Subscriptions 画面で該当の購読を開き、有効なら即時解約します。すでに更新の請求があれば全額返金します。Paddle 側で先に解約済みの場合も、このメールが届くことがあります。
+- 「Cancelled after account deletion」のメールが届いたら: 削除依頼の後に更新の請求が出ていれば、その請求を全額返金します。
+- アカウント削除の依頼: 有効な購読があれば、先に Paddle で即時解約します(残りの期間は返金しません。規約の Ending)。依頼の受付後に更新の請求が出ていれば、その更新分を全額返金します。そのあと `users`、`api_keys`、`usage`、`webhooks`、`oauth_tokens`、`sessions` の該当行を消します。`billing_subscriptions`、`billing_events`、`billing_audit` は返金の照合と会計のため7年残します。
+- フォームからの解約: 受付時に効力が出ると約束しています。返信を待たずに Paddle で期間末の解約をし、アカウントのメールアドレス宛に解約の確認を送ります。本人ではないと連絡があれば解約を取り消します。受付後に更新の請求が出ていたら、その更新分を全額返金します。問い合わせのメールが届かなかった依頼は、Worker が5分ごとに送り直します(`contact_messages.notified = 0`)。
+- 障害の返金: 申請があったら、当方の原因で連続72時間を超えたかを確かめ、丸1日ごとに月額の30分の1を返金します。
+- 毎月1回の確認(D1 で実行):
+  - 届いていない問い合わせ: `SELECT id, created_at, kind FROM contact_messages WHERE notified = 0`。あれば内容を読んで対応します(5分ごとの再送は1時間で止まります)。
+  - 返金の漏れ: `SELECT at, subscription_id, action FROM billing_audit WHERE action IN ('deleted_account','cancel_failed') OR action LIKE '%_deleted_account'` の前月分。通知メールを見落としていないか、削除依頼の後の請求を返金したかを確かめます。
+- 返信は元のスレッドで送ります(件名の `[JapanStake]` を残し、月1回の削除の対象にするため)。差出人は必ず support@japanstake.com(表示名「JapanStake」)を選びます。個人のアドレスや本名で送らないためです。
+- 問い合わせメール: 受信箱に転送された問い合わせは、毎月1回、Gmail で `older_than:1y subject:[JapanStake]` を検索して削除し、ゴミ箱からも完全に削除します(プライバシーポリシーで最長13か月と約束しています)。
 
 ### 大量削除
 

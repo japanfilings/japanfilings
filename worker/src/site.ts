@@ -29,8 +29,10 @@ const fmtUsd = (v: unknown) => (isNum(v) ? (v >= 1e9 ? `$${(v / 1e9).toFixed(2)}
 
 // ---------- Design tokens and base styles ----------
 
-const FONTS =
-  "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap";
+// Served from our own /fonts (latin subset, SIL Open Font License; see /fonts/OFL-*.txt), so no request
+// goes to a font host. Japanese text falls back to the system fonts in the stacks below.
+const FONT_FACES =
+  "@font-face{font-family: 'Bricolage Grotesque'; font-style: normal; font-weight: 500; font-stretch: 100%; font-display: swap; src: url(/fonts/bricolage-grotesque.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}@font-face{font-family: 'Bricolage Grotesque'; font-style: normal; font-weight: 700; font-stretch: 100%; font-display: swap; src: url(/fonts/bricolage-grotesque.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}@font-face{font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url(/fonts/ibm-plex-mono-400.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}@font-face{font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url(/fonts/ibm-plex-mono-500.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}@font-face{font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 400; font-stretch: 100%; font-display: swap; src: url(/fonts/ibm-plex-sans.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}@font-face{font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 500; font-stretch: 100%; font-display: swap; src: url(/fonts/ibm-plex-sans.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}@font-face{font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 600; font-stretch: 100%; font-display: swap; src: url(/fonts/ibm-plex-sans.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}";
 
 const CSS = `
 /* Layout: a filing ledger. One 1120px column, data set in mono, ink-indigo for structure, vermilion only for alerts. */
@@ -221,6 +223,11 @@ const NAV = [
 
 type PageOpts = { description?: string; path?: string; noindex?: boolean };
 
+// The legal notice link appears once the notice is on. The value comes from the deployment's settings,
+// which are the same for every request, so index.ts sets it once per request before rendering.
+let legalLink = false;
+export const setLegalLink = (on: boolean) => { legalLink = on; };
+
 export function page(title: string, body: string, user: User | null, opts: PageOpts | string = {}) {
   const o: PageOpts = typeof opts === "string" ? { description: opts } : opts;
   const desc = o.description || "Japanese listed-company filings as English JSON for developers and AI agents: ownership changes, cross-shareholdings, financials. REST API, MCP and webhooks.";
@@ -229,8 +236,7 @@ export function page(title: string, body: string, user: User | null, opts: PageO
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}"><meta property="og:type" content="website">
 ${o.noindex ? `<meta name="robots" content="noindex">` : ""}
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="${FONTS}">
+<link rel="preload" href="/fonts/ibm-plex-sans.woff2" as="font" type="font/woff2" crossorigin><style>${FONT_FACES}</style>
 <style>${CSS}</style></head><body>
 <header class="top"><div class="wrap">
 <a class="brand" href="/">${LOGO}JapanStake</a>
@@ -244,7 +250,7 @@ ${user ? `<a href="/dashboard"${o.path === "/dashboard" ? ` aria-current="page"`
 <p class="muted small">English summaries and extracts of public filings by Japanese listed companies. Reference data, not investment advice, a recommendation or an offer. We do not publish share prices. Event types, ticker matches, net share counts and summaries are our own processing, not official statements. Not affiliated with any government body.</p></div>
 <div><h4>Product</h4><ul><li><a href="/docs">Documentation</a></li><li><a href="/pricing">Pricing</a></li><li><a href="/openapi.json">OpenAPI spec</a></li><li><a href="/v1/status">Data status</a></li></ul></div>
 <div><h4>Data</h4><ul><li><a href="/events">Ownership changes</a></li><li><a href="/cross-holdings">Cross-shareholdings</a></li><li><a href="/indicators">Indicators</a></li><li><a href="/sources">Sources and licences</a></li></ul></div>
-<div><h4>Legal</h4><ul><li><a href="/terms">Terms of use</a></li><li><a href="/privacy">Privacy</a></li><li><a href="/contact">Contact and corrections</a></li></ul></div>
+<div><h4>Legal</h4><ul><li><a href="/terms">Terms of use</a></li><li><a href="/privacy">Privacy</a></li><li><a href="/contact">Contact and corrections</a></li>${legalLink ? `<li><a href="/legal">特定商取引法に基づく表記</a></li>` : ""}</ul></div>
 </div></footer>
 </body></html>`;
 }
@@ -330,11 +336,13 @@ function pricingCards(open = false, user: User | null = null) {
 <h3>${p.name}</h3>
 <p class="price">${p.price}<small> / month</small></p>
 <p class="muted small">${esc(open ? "On sale" : p.note)} · ${fmtNum(QUOTA[p.plan])} requests a month</p>
-<ul>${p.items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>${buyButton(p.plan, open, user)}</div>`).join("")}</div>`;
+<ul>${p.items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>${buyButton(p.plan, open, user)}</div>`).join("")}</div>${open ? renewalNote() : ""}`;
 }
 
 const BILLING_NOTE = `<p class="notice small"><b>Not launched yet.</b> Signup (email, one-time link, then a key on the dashboard) works only on a local test deployment for now, and opens to the public at launch. Every plan is paid, from $9 a month; an account without a plan cannot call the API. Billing is off, so no plan can be bought yet; the prices shown are what we plan to charge.</p>`;
-const OPEN_NOTE = `<p class="notice small"><b>How signup works:</b> enter your email, follow the one-time link, and create a key on the dashboard. Paid plans are sold through Paddle, our merchant of record, which handles payment and VAT or sales tax. A plan change applies to your existing key.</p>`;
+const OPEN_NOTE = `<p class="notice small"><b>How signup works:</b> enter your email, follow the one-time link, and create a key on the dashboard. Paid plans are sold through Paddle, our merchant of record, which handles payment and VAT or sales tax. A plan change applies to your existing key. Plans are not sold to buyers in the EU, the EEA, the UK or Switzerland.</p>`;
+// Shown next to every buy button: the period, renewal, charge dates and what goes to Paddle.
+export const renewalNote = () => `<p class="faint xs" style="margin-top:12px">Monthly plan, paid in advance. It renews automatically every month on the same date (or the last day of a shorter month) until you cancel; you are charged when you subscribe and on each renewal date. Cancel at any time from your dashboard; the plan then runs to the end of the paid month. Refunds: a full refund on request within 14 days of your first purchase, once per person or organisation; otherwise no refund for a change of mind. Checkout opens on Paddle, our merchant of record: we send it your plan and an internal account ID, and you enter your email and payment details there. Not sold to buyers in the EU, EEA, UK or Switzerland. By subscribing you agree to our <a href="/terms">terms</a>, Paddle's buyer terms and automatic monthly renewal${legalLink ? `; see also the <a href="/legal">legal notice</a>` : ""}.</p>`;
 
 // ---------- Landing ----------
 
@@ -358,7 +366,7 @@ export function landing(user: User | null, origin: string, stats: SiteStats, eve
 <span class="eyebrow">Japan ownership and activism data · English · REST, MCP, webhooks</span>
 <h1>Who is buying into Japanese companies, and what they say they will do.</h1>
 <p class="lead">5% stakes and stated proposal intentions, tender offers, shareholder votes, disclosed trades and cross-shareholdings for ${fmtNum(stats.companies)} listed Japanese companies, from public EDINET filings, in English JSON for funds, researchers and AI agents. Bring your own prices: every company carries a FIGI and common ticker symbols to join them.</p>
-<p class="notice small"><b>Not launched yet; billing is off.</b> This is reference data from public filings. It is not investment advice, and we publish no share prices.</p>
+<p class="notice small">${extras.billingOpen ? "" : "<b>Not launched yet; billing is off.</b> "}This is reference data from public filings. It is not investment advice, and we publish no share prices.</p>
 <div class="ctas"><a class="btn" href="/pricing">See plans, from $9 a month</a><a class="btn ghost" href="/docs">Read the docs</a></div>
 <div class="stats"><div><b>${fmtNum(stats.reports)}</b>annual reports parsed</div><div><b>${fmtNum(stats.events)}</b>ownership changes</div><div><b>${fmtNum(stats.crossHoldings)}</b>cross-holdings matched</div></div>
 </div>
@@ -785,7 +793,7 @@ export function pricing(user: User | null, earliest: string | null = null, open 
     ["Where does the data come from?", "EDINET, the Financial Services Agency's disclosure system, read through its API, plus SEC Form N-PORT and OpenFIGI. See Sources and licences."],
     ["How much history is there?", `5% filings on file start ${earliest ?? "recently"}. Annual reports start June 2026, and each carries five years of headline figures.`],
     ["Do you provide stock prices?", "No. Each company record includes a FIGI and, where our mapping covers it, common ticker symbols (7203.T, 7203 JP), so you can join your own price source. The only unit prices served are those a filer states in the trade table of a 5% report. They are filed prices, not market prices."],
-    ["How fresh is it?", "The ingest job is scheduled every 10 minutes from 08:00 to 21:00 Japan time on business days, and webhook delivery runs every 5 minutes. The service has not launched yet, so these are the schedules rather than a track record."],
+    ["How fresh is it?", "The ingest job is scheduled every 10 minutes from 08:00 to 21:00 Japan time on business days, and webhook delivery runs every 5 minutes." + (open ? " These are the scheduled times; actual timing can vary." : " The service has not launched yet, so these are the schedules rather than a track record.")],
     ["What happens at the request limit?", "HTTP 429 means one of two limits was hit: the monthly quota (it resets at the start of the next calendar month, UTC) or the per-minute limit (retry after the delay in the message). The message says which. Successful responses report usage in X-Quota-Used and X-Quota-Limit."],
     ["Is this investment advice?", "No. It is reference data taken from public filings, with descriptive figures that we calculate and label as ours. Percentiles are ranks among listed companies, and lists are sorted only by the metric you choose. Data may be incomplete, delayed or wrong, so check the original filing. Nothing here is a recommendation to buy or sell any security."],
   ];
@@ -793,7 +801,7 @@ export function pricing(user: User | null, earliest: string | null = null, open 
 <div class="co-head"><h1>Pricing</h1><p class="lead">Two plans, both with every dataset, full history and webhooks. Starter is $9 a month; Pro is $39 for higher request limits${open ? "" : ". Plans go on sale at launch"}.</p></div>
 ${open ? OPEN_NOTE : BILLING_NOTE}
 <div style="margin-top:16px">${pricingCards(open, user)}</div>
-<p class="faint xs" style="margin-top:14px">Prices in U.S. dollars, excluding any VAT or sales tax. Not launched yet. Reference data, not investment advice; no share prices.</p>
+<p class="faint xs" style="margin-top:14px">Prices in U.S. dollars, excluding any VAT or sales tax.${open ? "" : " Not launched yet."} Reference data, not investment advice; no share prices.</p>
 <section style="margin-top:32px"><h2 style="margin-bottom:16px">What each plan includes</h2>
 <div class="panel scroll"><table><tr><th></th><th>Starter</th><th>Pro</th></tr>
 ${matrix.map((r) => `<tr><td>${esc(r[0])}</td><td class="small">${r[1]}</td><td class="small">${r[2]}</td></tr>`).join("")}</table></div></section>
@@ -1061,43 +1069,44 @@ const CONTACT_LINK = `<a href="/contact">Corrections and removal</a>`;
 
 // Paid-plan wording appears once the legal notice is switched on (legalReady), before sales open,
 // so Paddle's review and buyers see the same terms. Keep REFUNDS and CANCELLATION in step with the notice.
-export const PAID_UPDATED = "2026-11-09";
-export const REFUND_TEXT = "Within 14 days of your first purchase, ask through the contact form and we refund it in full, for any reason, once per person or organisation. After that, and for renewals, we do not refund a change of mind or the unused days after a cancellation, because the service starts at once. We do refund duplicate or incorrect charges, a long outage caused by us, and the unused part of a paid plan we discontinue. Refunds are made through Paddle and do not limit your statutory rights.";
-const PAID_TERMS = `<h2>Plans and payment</h2><p>Every plan is paid; an account without a plan cannot use the API. Paddle.com Market Limited is the seller and merchant of record: it takes the payment, issues the receipt and handles VAT or sales tax, and its buyer terms also apply to the purchase. Prices are on the <a href="/pricing">pricing page</a>; the total, with tax, is shown at checkout.</p>
-<h2>Renewal</h2><p>A plan is a monthly subscription. It starts as soon as the payment completes and renews automatically each month, and Paddle charges your payment method at the start of each period, until you cancel.</p>
-<h2>Cancellation</h2><p>Cancel at any time from the billing portal on your dashboard or through the contact form. There is no cancellation fee. The plan stays active until the end of the period already paid for, you are not charged again, and API requests are then refused.</p>
+export const PAID_UPDATED = "2026-11-10";
+export const REFUND_TEXT = "Within 14 days of your first purchase, ask through the contact form and we refund it in full, for any reason, once per person or organisation. After that, and for renewals, we do not refund a change of mind or the unused days after a cancellation, because the service starts at once. We do refund duplicate or incorrect charges, the affected days of an outage caused by us that lasts more than 72 hours in a row (1/30 of the monthly price for each full day affected), and the unused part of a paid plan we discontinue; ask for these through the contact form. When a purchase is refunded in full or charged back, the plan ends at once and its subscription is cancelled, so it is not charged again. Refunds are made through Paddle and do not limit your statutory rights.";
+const PAID_TERMS = `<h2>Who can buy</h2><p>Paid plans are not sold to buyers located or resident in the European Union, the European Economic Area, the United Kingdom or Switzerland, and checkout is refused from those regions. By subscribing you confirm that you are not located or resident in these regions. If we learn that a plan was bought from one of them, we may end it and refund the payment in full.</p>
+<h2>Plans and payment</h2><p>Every plan is paid; an account without a plan cannot use the API. Paddle.com Market Limited is the seller and merchant of record: it takes the payment, issues the receipt and handles VAT or sales tax, and its buyer terms also apply to the purchase. Prices are on the <a href="/pricing">pricing page</a>; the total, with tax, is shown at checkout.</p>
+<h2>Renewal</h2><p>A plan is a monthly subscription. It starts as soon as the payment completes and renews automatically each month on the same date (or the last day of a shorter month), and Paddle charges your payment method at the start of each period, until you cancel. If a renewal payment fails, Paddle retries it; if it is not paid, the plan ends and API requests are refused.</p>
+<h2>Cancellation</h2><p>Cancel at any time from the billing portal on your dashboard or through the contact form. A cancellation sent through the form, from your account's email address or naming it, takes effect when we receive it, and we confirm it by email to your account address; if a renewal is charged after we received it, we refund that renewal in full. There is no cancellation fee. The plan stays active until the end of the period already paid for, you are not charged again, and API requests are then refused.</p>
 <h2>Refunds</h2><p>${REFUND_TEXT}</p>
 <h2>Price changes</h2><p>We give at least 30 days' notice, by email or on the dashboard, before a new price applies to your subscription. It applies from the first renewal after the notice, and you can cancel before then.</p>`;
 const UNPAID_TERMS = `<h2>Plans and payment</h2><p>Every plan is paid; an account without a plan cannot use the API. Billing is not connected yet and nothing is charged. Before any paid plan goes on sale, we will update these terms with how payment, renewal and cancellation work.</p>`;
 
 export function terms(user: User | null, contact: string | null, paid = false) {
   return legal(user, "Terms of use", "/terms", `
-<p>These terms apply to the JapanStake website, API and MCP server (the service). By creating an account or using an API key you accept them. They take effect on 2026-11-01.</p>
-<h2>Who runs the service</h2><p>The service is run by an individual business operator under the name JapanStake. The operator's name and address are given without delay on request, through the contact below.${paid ? " Paid plans are sold by Paddle (see Plans and payment)." : " Paid plans are not on sale; the seller will be named here before they are."}</p>
-<h2>The service</h2><p>JapanStake provides data processed from public filings and other public sources. It is reference information, not investment, legal or tax advice, and not a recommendation about any security. Check important figures against the original source linked from each record.</p>
+<p>These terms apply to the JapanStake website, API and MCP server (the service). By creating an account or using an API key you accept them. They take effect on 2026-11-01${paid ? "; the sections on paid plans take effect on " + PAID_UPDATED : ""}.</p>
+<h2>Who runs the service</h2><p>The service is run by an individual business operator under the name JapanStake. The operator's name and address are given without delay on request from a user or prospective buyer, through the contact below.${paid ? " Paid plans are sold by Paddle (see Plans and payment)." : " Paid plans are not on sale; the seller will be named here before they are."}</p>
+<h2>The service</h2><p>JapanStake provides data processed from public filings and other public sources. It is reference information, not investment, legal or tax advice, and not a recommendation about any security. Do not use it as the sole basis for an investment or business decision; verify important figures against the original filing linked from each record before you rely on them.</p>
 <h2>Not advice</h2><p>We do not advise on anyone's individual investment decisions and we do not say what to buy, sell or hold. We publish no share prices. Figures, percentiles and sorted lists are arithmetic on the data. If you use the service to give investment advice, to solicit transactions or in any regulated activity, you are responsible for that activity and for any registration it needs.</p>
-<h2>Accuracy and liability</h2><p>Filings can contain errors, and our processing can too. The data is provided "as is", without any warranty of accuracy, completeness or availability. To the extent the law allows, we are not liable for losses arising from its use. Nothing here limits liability that the law does not allow to be limited. In particular, where you are a consumer, liability for our intent or gross negligence is not excluded, and any other limit applies only as far as the Consumer Contract Act of Japan permits. Otherwise, our total liability for any claim is limited to the fees you paid us in the 12 months before it arose.</p>
+<h2>Accuracy and liability</h2><p>Filings can contain errors, and our processing can too. We do not guarantee that the data is accurate, complete or always available. Except for loss caused by our intent or gross negligence (this section applies to ordinary negligence only): (a) we are not liable for lost profits, lost business or indirect or consequential loss; and (b) our total liability to you, on any legal basis and for all claims together, is limited to the greater of the total fees paid for your plan, including through Paddle, in the 12 months before the cause of the claim arose, and USD 100.</p>
 <h2>Your account and key</h2><p>Keep your API key secret. You are responsible for requests made with it. Replace it from the dashboard if it leaks. One person or organisation per account.</p>
 <h2>Acceptable use</h2><ul><li>Stay within your plan's monthly and per-minute limits; do not create extra accounts or keys to get around them.</li>
 <li>Keep the source attribution when you show the data to others, including the EDINET credit as shown on <a href="/sources">Sources and licences</a>.</li>
 <li>Do not try to identify anyone shown as an individual filer or individual holder, and do not use the data to track, profile or harass a person.</li>
 <li>Do not use the service in breach of the law or of a data source's terms.</li></ul>
-<h2>Redistribution</h2><p>"Raw data" means records from the service, in bulk or substantially whole, in any format. You may use the data in your own analysis and products, show it to your own customers in limited amounts as part of something you add value to, and let your AI products cite or display it with attribution. You may not offer raw data as a feed, a database or an API, to your customers or anyone else.</p>
+<h2>Redistribution</h2><p>"Raw data" means records from the service, in bulk or substantially whole, in any format. You may use the data in your own analysis and products, show it to your own customers in limited amounts as part of something you add value to, and let your AI products cite or display it with attribution. You may not offer raw data as a feed, a database or an API, to your customers or anyone else. These limits cover our processed data only; they do not restrict your use of the original documents, which you can obtain from EDINET under its own terms.</p>
 <h2>Corrections and stops</h2><p>Anyone, account holder or not, can ask us to correct a record, or to stop showing information about a person. Use ${CONTACT_LINK}. We check the request against the source filing and reply by email.</p>
 ${paid ? PAID_TERMS : UNPAID_TERMS}
-<h2>Availability</h2><p>There is no service level commitment. We may suspend the service for maintenance, faults or legal reasons. A data source can change or stop, and a dataset that depends on it can then stop too, without compensation.</p>
-<h2>Ending</h2><p>You may stop at any time and ask us to delete your account. We may suspend or end an account that breaches these terms. You may not use the service if you are subject to sanctions that prohibit us from dealing with you.</p>
+<h2>Availability</h2><p>There is no service level commitment. We may suspend the service for maintenance, faults or legal reasons. A data source can change or stop, and a dataset that depends on it can then stop too; our liability for that is as set out in Accuracy and liability, and if we discontinue a paid plan, Refunds applies. We are not liable for delay or failure caused by events beyond our reasonable control, such as a failure of a data source, the internet, or a hosting or payment provider.</p>
+<h2>Ending</h2><p>You may stop at any time and ask us to delete your account. If a plan is active when you ask, we first cancel its subscription at once; the rest of the paid period is not refunded, except as set out in Refunds. If a renewal is charged after we received the request, we refund that renewal in full. We may suspend or end an account that breaches these terms. You may not use the service if you are subject to sanctions that prohibit us from dealing with you.</p>
 <h2>Rights</h2><p>Rights in source documents stay with their owners. Rights in our software, site and processing stay with the operator. You receive a right to use the service under these terms, nothing more.</p>
 <h2>Changes</h2><p>These terms are standard terms. We may change them where the change benefits users, or is reasonable and fits the purpose of the agreement. We announce the change, its content and its effective date on this page at least 14 days ahead, unless the law or an urgent matter requires less.</p>
-<h2>Law, courts, language</h2><p>Japanese law governs these terms. The courts of Japan have jurisdiction, subject to any mandatory right a consumer has to use their own courts. If a translation differs, the English text prevails. If one clause is invalid, the others stand.</p>
+<h2>Law, courts, language</h2><p>Japanese law governs these terms, without limiting any mandatory consumer protection law of the country where you live. The Tokyo District Court has exclusive jurisdiction in the first instance, except where mandatory law gives a consumer the right to use another court. If a translation differs, the English text prevails, except that the Japanese text of the legal notice (特定商取引法に基づく表記) prevails for that notice. If one clause is invalid, the others stand.</p>
 <h2>Contact</h2><p>Use the <a href="/contact">contact form</a>.</p>`, "Terms of use for the JapanStake website, API and MCP server.", paid ? PAID_UPDATED : "2026-11-01");
 }
 
 export function privacy(user: User | null, contact: string | null, paid = false) {
   return legal(user, "Privacy", "/privacy", `
 <p>We collect only the data listed on this page. This page covers people with an account, visitors without one (see Who else handles data and Cookies), and people named in public filings.</p>
-<h2>Who is responsible</h2><p>An individual business operator runs the service. The operator's name and address are given without delay on request, through the contact below.</p>
-<h2>Account holders: what we keep and why</h2><ul><li>Your email address, to sign you in with one-time links and to contact you about your account.</li><li>A one-way hash of your API key and of your session token, never the values themselves, to authenticate you.</li><li>A monthly count of your API requests, to apply your plan's limit.</li><li>For webhooks: the URL you register, its signing secret and a delivery status, to deliver what you asked for.</li></ul>
+<h2>Who is responsible</h2><p>An individual business operator runs the service. The operator's name and address are given without delay on request from a person whose personal data we hold, through the contact below.</p>
+<h2>Account holders: what we keep and why</h2><ul><li>Your email address, to sign you in with one-time links and to contact you about your account.</li><li>A one-way hash of your API key, your session token and any OAuth tokens you grant to an MCP client, never the values themselves, to authenticate you.</li><li>A monthly count of your API requests, to apply your plan's limit.</li>${paid ? "<li>Your subscription status and past refunds, to give access to your plan and to apply the once-per-person refund rule.</li>" : ""}<li>For webhooks: the URL you register, its signing secret and a delivery status, to deliver what you asked for.</li><li>For MCP connections: the application's name and the redirect addresses it registers, and a hash of the registering network address that changes every hour.</li></ul>
 <h2>People named in filings</h2><p>Our source documents are public filings on EDINET. Some name individuals. We use them to provide structured data about listed companies and their ownership.</p>
 <ul><li>Not shown: individuals who file 5% reports or appear as holders in them, and major shareholders not recognisably organisations. They appear as <code>individual filer</code> or <code>individual holder</code>. Their holdings are not searchable by person, and a link to the source filing remains.</li>
 <li>Not shown: the names of officers, representatives and meeting candidates. Officers appear by title only, and voting results by proposal, without the candidate's name.</li>
@@ -1107,12 +1116,13 @@ export function privacy(user: User | null, contact: string | null, paid = false)
 <p>You can ask us to correct this or stop showing it: <a href="/contact">Corrections and removal</a>.</p>
 <h2>Your requests</h2><p>You can ask us to disclose, correct, delete or stop using personal data we hold about you, or to stop providing it to third parties. Write to the contact below, saying what the request concerns. We may ask for just enough to confirm it is you, reply by email without delay and charge nothing.</p>
 <h2>Who else handles data</h2><p>We do not sell data. There are no advertising or tracking cookies and no analytics scripts. These providers process data for us, some outside Japan, under their own safeguards:</p>
-<ul><li>Cloudflare, Inc. (United States): hosting and database.</li><li>Resend (United States): sends sign-in emails, so it receives your email address.</li><li>Google Fonts (United States): pages load fonts from Google, so your browser sends its IP address and user agent.</li><li>Paddle.com Market Limited (United Kingdom): ${paid ? "the seller of paid plans. We send it only the plan and an internal account ID. You give it your email and payment details at checkout, and it sends us back the subscription status, its customer ID and refund or chargeback notices, never your card details." : "would handle payment if paid plans open. It receives nothing while billing is off."}</li></ul>
+<ul><li>Cloudflare, Inc. (United States): hosting and database.</li><li>Resend (United States): sends sign-in emails and forwards contact-form requests to us, so it receives your email address and, for requests, what you wrote.</li><li>Google (United States): contact-form requests reach us, and our replies are sent, through Google's email service.</li><li>GitHub, Inc. (United States): runs our update and backup jobs, which handle account data briefly while making encrypted backups.</li></ul>
+<p>Paddle.com Market Limited (United Kingdom) ${paid ? "is not our processor: it is the seller of paid plans and handles checkout data under its own privacy notice. We send it only the plan and an internal account ID. You give it your email and payment details at checkout, and it sends us back the subscription status, its customer ID and refund or chargeback notices, never your card details." : "would sell paid plans if they open. It receives nothing while billing is off."}</p>
 <p>Those countries' laws can differ from Japan's. Ask us for more about a provider's safeguards.</p>
 <h2>Security</h2><p>Keys and session tokens are stored only as hashes, traffic uses HTTPS, secrets are kept outside the code, and access to the systems is limited to the operator.</p>
-<h2>Keeping and deleting</h2><p>Account data stays while your account exists. Ask us to delete the account and we remove its email, keys, usage and webhooks. Sign-in links expire in 20 minutes. Requests sent through the contact form (what you wrote, the page and your email address) are kept for one year to answer and track them, then deleted; your network address is stored only as a hash that changes every day, to limit abuse.</p>
-<h2>Cookies</h2><p>One cookie, <code>jf_session</code>, keeps you signed in for up to 30 days. It is removed when you sign out.</p>
-<h2>EU and UK</h2><p>We have not yet reviewed this policy against the GDPR or UK GDPR, and the service is not aimed at people in those regions until we have. You can still make any request above.</p>
+<h2>Keeping and deleting</h2><p>Account data stays while your account exists. Ask us to delete the account and we remove its email, keys, usage and webhooks.${paid ? " Billing records (subscription and refund history and Paddle's IDs) are kept for up to 7 years after the account is deleted, for accounting and to apply the refund rule." : ""} Deleted data can remain in the database's 30-day recovery log until it expires. Encrypted backups of account data are normally overwritten within 8 weeks and are deleted no later than one year after they are made, including any offline copy. Sign-in links expire in 20 minutes. Requests sent through the contact form (what you wrote, the page and your email address) are kept for one year in our database and for up to 13 months in the copy forwarded to our mailbox, to answer and track them, then deleted; your network address is stored only as a hash that changes every day, to limit abuse.</p>
+<h2>Cookies</h2><p>Two cookies: <code>jf_session</code> keeps you signed in for up to 30 days and is removed when you sign out; <code>jf_oauth_pending</code> lasts 30 minutes while you connect an MCP client.</p>
+<h2>EU, EEA, UK and Switzerland</h2><p>Paid plans are not sold in these regions and the service is not directed at people there; this policy is written for Japan's Act on the Protection of Personal Information. If you are in one of these regions, please do not create an account; we may close it. Anyone can still make any request above.</p>
 <h2>Contact</h2><p>Use the <a href="/contact">contact form</a>.</p>`, "What JapanStake keeps about account holders and people named in filings, who processes it, and how to ask for a correction or a stop.", paid ? PAID_UPDATED : "2026-11-01");
 }
 
@@ -1121,6 +1131,7 @@ export function contactPage(user: User | null, state: { sent?: boolean; error?: 
   const kinds: [string, string, string][] = [
     ["correction", "Correct a record", "For example a wrong name match, investor grouping or figure."],
     ["stop", "Stop showing information about a person", "If a record shows you, or someone you represent. We stop showing it while we check."],
+    ["billing", "Cancel a plan or ask for a refund", "Send it from your account's email address, or give that address in the request."],
     ["personal_data", "Your own account or personal data", "Disclosure, correction, deletion or stopping use."],
     ["other", "Something else", "Questions about the service."],
   ];
@@ -1153,15 +1164,19 @@ export const legalReady = (env: LegalEnv) => env.LEGAL_PAGE_ENABLED === "true" &
 
 export function legalPage(user: User | null, env: LegalEnv) {
   const rows: [string, string][] = [
-    ["販売者 / Seller", "Paddle.com Market Limited（日本向け）。購入にはPaddleの規約が適用されます。"],
+    ["販売者 / Seller", "Paddle.com Market Limited（英国法人。当サービスを再販売する販売者 / Merchant of Record）。購入にはPaddleの購入者規約が適用されます。 / Sold by Paddle.com Market Limited (UK), the reseller and merchant of record; Paddle's buyer terms apply."],
     ["サービス提供者 / Service provider", esc(env.LEGAL_PROVIDER_NAME)],
-    ["氏名・住所・電話番号 / Name, address, phone", `請求があれば遅滞なく提供します。請求は<a href="/contact">お問い合わせフォーム</a>からお送りください。`],
-    ["価格 / Price", `<a href="/pricing">料金ページ</a>のとおり。税の扱いはチェックアウトに表示します。`],
-    ["支払時期・方法 / Payment", "Paddleのチェックアウトで指定した方法により、申込時と各更新時に支払います。"],
+    ["氏名・住所・電話番号 / Name, address, phone", `ご購入者またはご購入を検討される方からの請求があれば、遅滞なく電子メールで提供します。請求は<a href="/contact">お問い合わせフォーム</a>からお送りください。 / Provided without delay by email on request from a buyer or prospective buyer, through the contact form.`],
+    ["連絡先 / Contact", `<a href="/contact">お問い合わせフォーム</a>（メールで回答します / answered by email）`],
+    ["価格 / Price", `Starter 月額9米ドル、Pro 月額39米ドル（税抜）。税が加算される場合、税込の合計額はチェックアウトで表示されます。詳細は<a href="/pricing">料金ページ</a>。 / USD 9 (Starter) or USD 39 (Pro) per month, excluding tax; any tax and the total are shown at checkout.`],
+    ["商品代金以外の必要料金 / Other costs", "インターネット接続に必要な通信料はお客様の負担です。 / Your own internet connection costs."],
+    ["支払時期・方法 / Payment", "Paddleのチェックアウトに表示される方法（クレジットカード等）により、申込時に初回分を、以後は毎月の更新日に前払いで支払います。 / Paid in advance by a method shown at Paddle's checkout (for example a credit card): at signup, then on each monthly renewal date."],
+    ["契約期間・自動更新 / Term and renewal", "1か月単位の契約です。解約するまで毎月同じ日（該当日がない月は月末）に自動で更新されます。 / One-month term, renewed automatically every month on the same date (or the last day of a shorter month) until you cancel."],
+    ["販売地域 / Where sold", "EU・EEA・英国・スイスの方には販売していません。 / Not sold to buyers in the EU, EEA, UK or Switzerland."],
     ["提供開始時期 / Start of service", esc(env.LEGAL_START_OF_SERVICE)],
     ["解約 / Cancellation", esc(env.LEGAL_CANCELLATION)],
     ["返金 / Refunds", esc(env.LEGAL_REFUNDS)],
-    ["動作環境 / Requirements", "インターネット接続と、HTTPSでAPIまたはMCPを呼び出せる環境。"],
+    ["動作環境 / Requirements", "インターネット接続と、HTTPSでAPIまたはMCPを呼び出せる環境。 / An internet connection and a client that can call the API or MCP over HTTPS."],
   ];
   return legal(user, "特定商取引法に基づく表記", "/legal", `<div class="panel scroll"><table>${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${v}</td></tr>`).join("")}</table></div>`, "特定商取引法に基づく表記 / Legal notice.", PAID_UPDATED);
 }
@@ -1176,13 +1191,13 @@ export function notFoundPage(user: User | null, what = "page") {
 
 // ---------- Account ----------
 
-export function loginPage(user: User | null, msg = "", devLink?: string) {
+export function loginPage(user: User | null, msg = "", devLink?: string, open = false) {
   return page("Sign in | JapanStake", `<div class="wrap"><div class="co-head" style="max-width:560px">
 <h1>Sign in or create an account</h1>
 <p class="lead">We email you a one-time link. There is no password, and no card.</p>
 <form method="post" action="/login" class="field" style="margin-top:8px"><label for="email" style="position:absolute;left:-9999px">Email</label><input id="email" type="email" name="email" required placeholder="you@company.com" autocomplete="email"><button class="btn" type="submit">Email me a link</button></form>
 ${msg ? `<p class="notice small">${esc(msg)}</p>` : ""}${devLink ? `<p class="notice warn small">Development mode, email is not configured: <a href="${esc(devLink)}">sign-in link</a></p>` : ""}
-<p class="faint xs">Every plan is paid, from $9 a month; plans are not on sale yet. By signing in you accept the <a href="/terms">terms of use</a> and <a href="/privacy">privacy policy</a>.</p>
+<p class="faint xs">Every plan is paid, from $9 a month; ${open ? "you choose a plan on your dashboard after signing in" : "plans are not on sale yet"}. By signing in you accept the <a href="/terms">terms of use</a> and <a href="/privacy">privacy policy</a>.</p>
 </div></div>`, user, { noindex: true });
 }
 
@@ -1193,7 +1208,7 @@ export function dashboardPage(user: User, status: { key_prefix: string; created_
 <div class="co-head"><span class="eyebrow">Signed in as ${esc(user.email)}</span><h1>Dashboard</h1></div>
 ${newKey ? `<div class="notice stack" style="gap:8px;margin-bottom:24px"><b>Your new API key</b><span class="small">Copy it now. We store only a hash and cannot show it again.</span><pre>${esc(newKey)}</pre></div>` : ""}
 <dl class="kv" style="margin:0 0 24px">
-<div><dt>Plan</dt><dd style="text-transform:capitalize">${esc(user.plan)}</dd></div>
+<div><dt>Plan</dt><dd style="text-transform:capitalize">${user.plan === "free" ? "No plan" : esc(user.plan)}</dd></div>
 <div><dt>Requests this month</dt><dd>${fmtNum(used)} <small>of ${fmtNum(quota)}</small></dd></div>
 <div><dt>Webhooks</dt><dd>${fmtNum(hooks.length)}</dd></div>
 </dl>
@@ -1210,7 +1225,7 @@ ${hooks.map((h) => `<tr><td><code>${esc(h.url)}</code><div class="xs faint mono"
 <section><h2 style="margin-bottom:10px">Plan</h2><p class="muted" style="margin-bottom:16px">${user.plan === "free" ? (billing?.open ? `You have no plan yet, so your key cannot call the API. <a href="/pricing">Choose a plan</a>, from $9 a month.` : `You have no plan yet, so your key cannot call the API. Plans go on sale at launch. <a href="/pricing">See what they include</a>.`) : `You are on ${user.plan === "starter" ? "Starter" : "Pro"}.`}</p>
 ${billing?.status === "past_due" ? `<p class="notice small" style="margin-bottom:16px">Your last payment failed and is being retried. Update your payment method to keep this plan.</p>` : ""}
 ${billing?.cancelAt ? `<p class="small" style="margin-bottom:16px">Your subscription is cancelled and ends on ${esc(billing.cancelAt.slice(0, 10))}. After that your key stops working until you choose a plan again.</p>` : billing?.live && billing.periodEnd ? `<p class="small" style="margin-bottom:16px">Current period ends ${esc(billing.periodEnd.slice(0, 10))}.</p>` : ""}
-${billing?.open ? `<div class="row" style="margin-bottom:16px">${billing.live ? "" : buyButton("starter", true, user) + buyButton("pro", true, user)}${billing.customerId ? `<form method="post" action="/billing/portal"><button class="btn ghost" type="submit">Manage billing</button></form>` : ""}</div>` : ""}
+${billing?.open ? `<div class="row" style="margin-bottom:16px">${billing.live ? "" : buyButton("starter", true, user) + buyButton("pro", true, user)}${billing.customerId ? `<form method="post" action="/billing/portal"><button class="btn ghost" type="submit">Manage billing</button></form>` : ""}</div>${billing.live ? "" : renewalNote()}` : ""}
 <form method="post" action="/logout"><button class="btn ghost" type="submit">Sign out</button></form></section>
 </div>`, user, { path: "/dashboard", noindex: true });
 }
