@@ -53,6 +53,11 @@ test("business calendar ignores the weekend and nights", () => {
   assert.equal(m.classify(def("large_holdings"), row, NOON_MON).status, "late"); // 4h into Monday
   assert.equal(Math.round(m.businessMinutes(new Date(row.last_success_at), new Date("2026-11-01T23:10:00Z"))), 20); // 10 min Fri + 10 min Mon
 });
+test("GitHub's delayed schedule (about hourly) is within the target; two hours is late", () => {
+  const row = (at) => ({ last_success_at: at, last_attempt_at: at, newest_source_date: "2026-11-02" });
+  assert.equal(m.classify(def("large_holdings"), row("2026-11-02T01:44:00Z"), NOON_MON).status, "fresh"); // 76 min
+  assert.equal(m.classify(def("large_holdings"), row("2026-11-02T00:55:00Z"), NOON_MON).status, "late"); // 125 min
+});
 test("old source date or unread filings make a dataset late", () => {
   const at = "2026-11-02T02:50:00Z";
   assert.deepEqual(m.classify(def("large_holdings"), { last_success_at: at, last_attempt_at: at, newest_source_date: "2026-10-01" }, NOON_MON).reasons, ["source_too_old"]);

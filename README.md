@@ -45,7 +45,7 @@ Measured on real data (October 2026, 1,275 large-holding filings): XBRL holding 
 ```
 japanfilings/        Python ingestion (EDINET, OpenFIGI) into SQLite; local stdio MCP server
 worker/              Cloudflare Worker: REST API + remote MCP (Streamable HTTP) over D1
-.github/workflows/   ingest.yml: every 10 min in JST business hours -> D1
+.github/workflows/   ingest.yml: scheduled every 10 min in JST business hours (GitHub runs it about hourly) -> D1
 ```
 
 ## Local run
