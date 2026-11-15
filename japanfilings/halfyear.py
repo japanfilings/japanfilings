@@ -77,8 +77,53 @@ def _pick(items, key):
     return None
 
 
+# Fallback when the summary table has no current-period column: the consolidated statements themselves.
+# Seen in 2025-26: a newly listed company tagged its only summary column as the prior period (544A), a
+# bank's table carried the two prior years only (8418), and a foreign filer had no table at all (9399).
+# In the statements OrdinaryIncome is 経常利益 and banks' revenue (経常収益) is OrdinaryIncomeBNK, the
+# reverse of the summary table's naming, so the keys are separate from annual.SUMMARY_KEYS.
+STATEMENT_KEYS = {
+    "revenue": ["NetSales", r"OperatingRevenue\d?", "OrdinaryIncomeBNK", "Revenue"],
+    "ordinary_income": ["OrdinaryIncome"],
+    "net_income_parent": ["ProfitLossAttributableToOwnersOfParent"],
+}
+
+
+def parse_statements(facts):
+    """Current-period figures from the consolidated statements, in yen only (a foreign filer also states
+    its own currency). None unless profit attributable to owners of the parent is there: without it the
+    statements are not consolidated, or not ones these keys know."""
+    cur, prior, pos = {}, {}, {}
+    for f in facts:
+        prefix, _, name = f["element"].partition(":")
+        v = annual._num(f["value"])
+        if prefix != "jppfs_cor" or v is None or f.get("unit") not in (None, "", "JPY"):
+            continue
+        {"InterimDuration": cur, "CurrentInterimDuration": cur, "Prior1InterimDuration": prior}.get(f["context"], {}).setdefault(name, v)
+        if f["context"] in ("InterimInstant", "CurrentInterimInstant"):
+            pos.setdefault(name, v)
+    if "ProfitLossAttributableToOwnersOfParent" not in cur:
+        return None
+    pick = lambda d, ps: next((d[k] for p in ps for k in d if re.fullmatch(p, k)), None)
+    results = {}
+    for out, ps in STATEMENT_KEYS.items():
+        v, p = pick(cur, ps), pick(prior, ps)
+        if v is None:
+            continue
+        results[out + "_mn_jpy"] = round(v / 1e6, 3)
+        results[out + "_yoy_pct"] = round(100 * (v - p) / abs(p), 1) if p and p > 0 else None
+    return {"consolidated": True, "results": results, "figures_from": "financial_statements",
+            "financial_position": {"total_assets": pos.get("Assets"), "net_assets": pos.get("NetAssets")}}
+
+
 def parse(facts):
-    """{(prior?, non_consolidated?): {element: value}} from the summary table, consolidated when there is one."""
+    """{(prior?, non_consolidated?): {element: value}} from the summary table, consolidated when there is one.
+    Without a current-period summary, the consolidated statements (parse_statements)."""
+    rec = _parse_summary(facts)
+    return rec if rec else parse_statements(facts)
+
+
+def _parse_summary(facts):
     raw = {}
     for f in facts:
         prefix, _, name = f["element"].partition(":")

@@ -70,3 +70,37 @@ def test_fiscal_year_from_dei():
     facts = [{"element": "jpdei_cor:CurrentFiscalYearEndDateDEI", "context": "FilingDateInstant", "value": "2027-03-31"}]
     assert halfyear.fiscal_year_from_facts(facts) == "2027-03"
     assert halfyear.fiscal_year_from_facts([]) is None
+
+
+def _fact(element, context, value, unit="JPY"):
+    return {"element": element, "label": "", "context": context, "unit": unit, "value": str(value)}
+
+
+def test_without_a_current_summary_the_consolidated_statements_are_used():
+    # 544A S100ZHED: the only summary column was tagged as the prior period; the statements are current.
+    facts = [_fact("jpcrp_cor:NetSalesSummaryOfBusinessResults", "Prior1InterimDuration", 38068000000),
+             _fact("jppfs_cor:NetSales", "InterimDuration", 38068000000),
+             _fact("jppfs_cor:OrdinaryIncome", "InterimDuration", -405000000),
+             _fact("jppfs_cor:ProfitLossAttributableToOwnersOfParent", "InterimDuration", 5902000000),
+             _fact("jppfs_cor:Assets", "InterimInstant", 123482000000), _fact("jppfs_cor:NetAssets", "InterimInstant", 62101000000)]
+    r = halfyear.parse(facts)
+    assert r["figures_from"] == "financial_statements" and r["consolidated"] is True
+    assert r["results"]["revenue_mn_jpy"] == 38068.0 and r["results"]["ordinary_income_mn_jpy"] == -405.0
+    assert r["financial_position"] == {"total_assets": 123482000000.0, "net_assets": 62101000000.0}
+
+
+def test_statements_fallback_reads_bank_names_and_yen_only():
+    # 8418 (bank): 経常収益 is OrdinaryIncomeBNK and 経常利益 is OrdinaryIncome in the statements.
+    bank = [_fact("jppfs_cor:OrdinaryIncomeBNK", "InterimDuration", 113577000000), _fact("jppfs_cor:OrdinaryIncomeBNK", "Prior1InterimDuration", 106800000000),
+            _fact("jppfs_cor:OrdinaryIncome", "InterimDuration", 26732000000),
+            _fact("jppfs_cor:ProfitLossAttributableToOwnersOfParent", "InterimDuration", 21527000000)]
+    r = halfyear.parse(bank)["results"]
+    assert (r["revenue_mn_jpy"], r["revenue_yoy_pct"], r["ordinary_income_mn_jpy"]) == (113577.0, 6.3, 26732.0)
+    # 9399 (foreign filer): each figure in dollars and in yen; only yen is stored.
+    foreign = [_fact("jppfs_cor:NetSales", "InterimDuration", 474000, "USD"), _fact("jppfs_cor:NetSales", "InterimDuration", 77000000),
+               _fact("jppfs_cor:ProfitLossAttributableToOwnersOfParent", "InterimDuration", -2111000, "USD"),
+               _fact("jppfs_cor:ProfitLossAttributableToOwnersOfParent", "InterimDuration", -343000000)]
+    r = halfyear.parse(foreign)["results"]
+    assert (r["revenue_mn_jpy"], r["net_income_parent_mn_jpy"]) == (77.0, -343.0)
+    # Non-consolidated statements (no profit attributable to owners of the parent) are not guessed at.
+    assert halfyear.parse([_fact("jppfs_cor:NetSales", "InterimDuration", 1000000)]) is None
