@@ -16,6 +16,11 @@ _CTX = re.compile(r"^(?:Current|(Prior1))?(InterimDuration|InterimInstant|YTDDur
 FIELDS = {"revenue": "revenue", "ordinary_income": "ordinary_income", "profit_before_tax": "profit_before_tax", "net_income": "net_income_parent"}
 
 
+# A company's own report is titled 半期報告書－…; a fund it manages files under the same EDINET code and
+# ticker with the security type in brackets, e.g. 半期報告書（内国信託受益証券等）－ (S100XQ9U, a property
+# fund of 8253). Its figures are the fund's, and as the newest filing it would hide the company's report.
+COMPANY_REPORT = "f.description_ja NOT LIKE '%半期報告書（%'"
+
 _PERIOD = re.compile(r"(\d{4})/(\d{2})/(\d{2})\s*[－\-]\s*(\d{4})/(\d{2})/(\d{2})\)")
 
 
@@ -155,7 +160,7 @@ def run(con, limit=None):
     con.executescript(tanshin.SCHEMA)
     rows = con.execute(
         "SELECT i.ticker, f.doc_id, f.submit_datetime, f.description_ja FROM filings f JOIN issuers i ON i.edinet_code = f.edinet_code "
-        "WHERE f.doc_type_code IN ('160', '170') AND i.listed = 1 AND i.ticker IS NOT NULL AND f.has_csv = 1 AND f.withdrawn = 0 "
+        "WHERE f.doc_type_code IN ('160', '170') AND i.listed = 1 AND i.ticker IS NOT NULL AND f.has_csv = 1 AND f.withdrawn = 0 AND " + COMPANY_REPORT + " "
         "ORDER BY f.submit_datetime DESC").fetchall()
     have = {r[0] for r in con.execute("SELECT url FROM earnings_releases WHERE period = 'H1'")}
     done = 0

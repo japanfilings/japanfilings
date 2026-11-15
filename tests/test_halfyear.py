@@ -104,3 +104,15 @@ def test_statements_fallback_reads_bank_names_and_yen_only():
     assert (r["revenue_mn_jpy"], r["net_income_parent_mn_jpy"]) == (77.0, -343.0)
     # Non-consolidated statements (no profit attributable to owners of the parent) are not guessed at.
     assert halfyear.parse([_fact("jppfs_cor:NetSales", "InterimDuration", 1000000)]) is None
+
+
+def test_a_fund_report_under_the_company_code_is_not_the_company_result():
+    # S100XQ9U: a property fund of 8253 files 半期報告書（内国信託受益証券等） under 8253's EDINET code.
+    c = sqlite3.connect(":memory:")
+    from japanfilings import store
+    c.executescript(store.SCHEMA + refresh.SCHEMA + "CREATE TABLE earnings_releases (ticker TEXT, fiscal_year_end_month TEXT, period TEXT, release_date TEXT, url TEXT, record TEXT, PRIMARY KEY (ticker, fiscal_year_end_month, period));")
+    c.execute("INSERT INTO issuers (edinet_code, ticker, listed) VALUES ('E03041', '8253', 1)")
+    for doc, day, desc in (("CO", "2025-11-12", "半期報告書－第75期(2025/04/01－2026/03/31)"), ("FUND", "2026-03-10", "半期報告書（内国信託受益証券等）－第1期(2025/06/13－2026/05/31)")):
+        c.execute("INSERT INTO filings (doc_id, submit_datetime, edinet_code, ticker, doc_type_code, description_ja, withdrawn, has_csv) VALUES (?,?,?,?,?,?,0,1)",
+                  (doc, day + " 09:00", "E03041", "8253", "160", desc))
+    assert [d["doc_id"] for d in refresh._missing(c, "half_year")] == ["CO"]

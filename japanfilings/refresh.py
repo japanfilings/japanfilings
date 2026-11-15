@@ -21,7 +21,7 @@ import time
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 
-from . import edinet, store
+from . import edinet, halfyear, store
 from .voting import AGM_WINDOW_DAYS as _AGM_WINDOW
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
@@ -57,7 +57,8 @@ RULES = {
                "SELECT doc_id FROM voting_read"),
 }
 _HALF = ("SELECT i.ticker, f.doc_id, f.submit_datetime, f.description_ja, f.edinet_code FROM filings f JOIN issuers i ON i.edinet_code = f.edinet_code "
-         "WHERE f.doc_type_code IN ('160','170') AND i.listed = 1 AND i.ticker IS NOT NULL AND f.has_csv = 1 AND f.withdrawn = 0 ORDER BY f.submit_datetime DESC")
+         "WHERE f.doc_type_code IN ('160','170') AND i.listed = 1 AND i.ticker IS NOT NULL AND f.has_csv = 1 AND f.withdrawn = 0 AND "
+         + halfyear.COMPANY_REPORT + " ORDER BY f.submit_datetime DESC")
 _REBUILD = {"large_holdings": ("events", "trades", "indicators"), "annual": ("crossholdings", "indicators")}
 
 
