@@ -293,12 +293,13 @@ test("OAuth never redirects to an unregistered address", { skip: !oauthOn }, asy
   assert.equal(pathBad.status, 400);
 });
 
-test("OAuth errors after validation return to the client with iss and state; PKCE is mandatory", { skip: !oauthOn }, async () => {
+test("OAuth errors after validation offer a link back to the client with iss and state, never an automatic redirect; PKCE is mandatory", { skip: !oauthOn }, async () => {
   const { client_id } = await (await register()).json();
   for (const [extra, error] of [[{ code_challenge_method: "plain" }, "invalid_request"], [{ code_challenge: "short" }, "invalid_request"], [{ scope: "admin" }, "invalid_scope"], [{ resource: "https://other.example/mcp" }, "invalid_target"], [{ response_type: "token" }, "unsupported_response_type"]]) {
     const r = await fetch(`${BASE}/oauth/authorize?${form(authzFields(client_id, pkce().challenge, extra))}`, { redirect: "manual" });
-    assert.equal(r.status, 302, JSON.stringify(extra));
-    const u = new URL(r.headers.get("location"));
+    assert.equal(r.status, 400, JSON.stringify(extra)); // anyone can register a client: a 302 here would be an open redirect
+    const href = /href="([^"]+)" rel="noreferrer">Return to the application/.exec(await r.text())[1].replaceAll("&amp;", "&");
+    const u = new URL(href);
     assert.equal(u.origin + u.pathname, REDIRECT);
     assert.equal(u.searchParams.get("error"), error);
     assert.equal(u.searchParams.get("state"), "st&ate");

@@ -276,8 +276,12 @@ oauthRoutes.get("/oauth/authorize", async (c) => {
   const parsed = await parseAuthz(c.env, c.req.url, (k) => c.req.query(k));
   if ("fatal" in parsed) return errorPage(c, parsed.fatal);
   if ("redirectError" in parsed) {
+    // Not an automatic redirect: anyone can register a client, so a crafted link would otherwise send a
+    // visitor from japanstake.com to any site with no click (an open redirect). Show the error and the
+    // destination's host, and let the person choose to go back.
     const e = parsed.redirectError;
-    return c.redirect(authzResponseUrl(c.env, c.req.url, e.uri, { error: e.error, error_description: e.description, state: e.state }), 302);
+    const back = authzResponseUrl(c.env, c.req.url, e.uri, { error: e.error, error_description: e.description, state: e.state });
+    return c.html(page("Cannot continue", `<h1>Cannot continue</h1><p>${esc(e.description)}</p><p>The application asked to return to <span class="host">${esc(new URL(e.uri).host)}</span>.</p><p><a class="button" href="${esc(back)}" rel="noreferrer">Return to the application</a></p>`), 400);
   }
   const fields = Object.fromEntries(AUTHZ_FIELDS.map((k) => [k, c.req.query(k)]));
   const user = await currentUser(c.env, getCookie(c, SESSION_COOKIE));
