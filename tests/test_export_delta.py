@@ -257,3 +257,21 @@ def test_workflow_uses_every_scheduled_job_and_no_secret_in_script_text():
     for line in text.splitlines():  # secrets and inputs reach scripts through env, never pasted into shell text
         if "${{" in line and ("secrets." in line or "inputs." in line):
             assert re.match(r"\s*([A-Z_]+:|if:)", line), line
+
+
+def test_changes_held_back_by_the_cap_are_recorded_as_waiting(env):
+    # C8: a held-back new row shows as a missing row_hash, but a held-back change or delete did not,
+    # so the dataset looked current while D1 still served the old rows.
+    con, state, out, d1 = env
+    export_d1.delta(con, state, out, tables=["filings"])
+    apply_all(state, out, d1)
+    con.execute("UPDATE filings SET ticker = '9999' WHERE doc_id IN ('S1', 'S2')")
+    con.execute("DELETE FROM filings WHERE doc_id = 'S3'")
+    con.commit()
+    state.execute("DELETE FROM writes")
+    export_d1.delta(con, state, out, tables=["filings"], daily_cap=5)  # room for one of the three
+    assert state.execute("SELECT n FROM deferred_rows WHERE tbl = 'filings'").fetchone()[0] == 2
+    apply_all(state, out, d1)
+    state.execute("DELETE FROM writes")
+    export_d1.delta(con, state, out, tables=["filings"])
+    assert state.execute("SELECT n FROM deferred_rows WHERE tbl = 'filings'").fetchone()[0] == 0

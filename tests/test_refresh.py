@@ -47,6 +47,14 @@ def test_amendment_marks_the_original(con):
     assert json.loads(con.execute("SELECT record FROM large_holdings WHERE doc_id='A'").fetchone()[0])["superseded_by"] == "B"
 
 
+def test_a_twice_amended_report_points_at_the_latest_and_is_not_rewritten_nightly(con):
+    filing(con, "A", "350"); filing(con, "B", "360", parent="A", day="2026-10-21"); filing(con, "C", "360", parent="A", day="2026-10-22")
+    con.execute("INSERT INTO large_holdings VALUES ('A','7203','E1','2026-10-20','{}')")
+    assert refresh.apply_amendments(con) == 1
+    assert json.loads(con.execute("SELECT record FROM large_holdings WHERE doc_id='A'").fetchone()[0])["superseded_by"] == "C"
+    assert refresh.apply_amendments(con) == 0  # the next night: nothing new, nothing written
+
+
 def test_failed_documents_retry_then_stop(con):
     filing(con, "A", "350")
     def boom(*_):
@@ -108,6 +116,20 @@ def test_publish_ignores_rows_withheld_on_purpose(con, tmp_path):
     stmts, _ = refresh.publish_sql(con, str(state), today="2026-10-21")
     line = next(x for x in stmts if "'large_holdings'" in x)
     assert line.split("VALUES (")[1].split(",")[2] != "NULL"
+
+
+def test_publish_keeps_old_success_while_changes_are_held_back(con, tmp_path):
+    refresh.record_run(con, "range", None)
+    con.execute("INSERT INTO large_holdings VALUES ('A','7203','E1','2026-10-20','{}')")
+    state = tmp_path / "s.db"
+    s = sqlite3.connect(state)
+    s.execute("CREATE TABLE row_hash (tbl TEXT, key TEXT, hash TEXT)")
+    s.execute("INSERT INTO row_hash VALUES ('large_holdings', 'A', 'h')")  # sent once, changed since
+    s.execute("CREATE TABLE deferred_rows (tbl TEXT PRIMARY KEY, n INTEGER NOT NULL)")
+    s.execute("INSERT INTO deferred_rows VALUES ('large_holdings', 1)"); s.commit(); s.close()
+    stmts, _ = refresh.publish_sql(con, str(state), today="2026-10-21")
+    line = next(x for x in stmts if "'large_holdings'" in x)
+    assert line.split("VALUES (")[1].split(",")[2] == "NULL"
 
 
 def test_ci_check_fails_on_late():

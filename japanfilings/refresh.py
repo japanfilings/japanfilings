@@ -199,10 +199,14 @@ def apply_withdrawals(con):
 
 
 def apply_amendments(con):
-    """A 5% report later amended keeps its row, as filed, and says which filing replaced it."""
+    """A 5% report later amended keeps its row, as filed, and says which filing replaced it: the latest
+    amendment. Taking every amendment in turn rewrote each parent with two or more of them every night
+    (2,224 rows reported as amended on 2026-11-11, with nothing new)."""
     n = 0
-    rows = con.execute("SELECT f.parent_doc_id, f.doc_id FROM filings f JOIN large_holdings l ON l.doc_id = f.parent_doc_id "
-                       "WHERE f.doc_type_code = '360' AND f.withdrawn = 0 ORDER BY f.submit_datetime").fetchall()
+    rows = con.execute("SELECT parent_doc_id, doc_id FROM (SELECT f.parent_doc_id, f.doc_id, ROW_NUMBER() OVER ("
+                       "PARTITION BY f.parent_doc_id ORDER BY f.submit_datetime DESC, f.doc_id DESC) AS rn "
+                       "FROM filings f JOIN large_holdings l ON l.doc_id = f.parent_doc_id "
+                       "WHERE f.doc_type_code = '360' AND f.withdrawn = 0) WHERE rn = 1").fetchall()
     for parent, doc in rows:
         rec = json.loads(con.execute("SELECT record FROM large_holdings WHERE doc_id = ?", (parent,)).fetchone()[0])
         if rec.get("superseded_by") != doc:
@@ -467,7 +471,11 @@ def _unsent(state_path, con, table):
             withheld = (st.execute("SELECT n FROM withheld_rows WHERE tbl = ?", (table,)).fetchone() or (0,))[0]
         except sqlite3.OperationalError:
             withheld = 0
-        return con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] - sent - withheld
+        try:  # changed or deleted rows the daily cap held back: D1 still serves the old version
+            waiting = (st.execute("SELECT n FROM deferred_rows WHERE tbl = ?", (table,)).fetchone() or (0,))[0]
+        except sqlite3.OperationalError:
+            waiting = 0
+        return max(con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] - sent - withheld, 0) + waiting
     except sqlite3.Error:
         return 0
     finally:

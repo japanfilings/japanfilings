@@ -165,6 +165,7 @@ def open_state(path, init=False):
         CREATE TABLE IF NOT EXISTS row_hash (tbl TEXT, key TEXT, hash TEXT, PRIMARY KEY (tbl, key)) WITHOUT ROWID;
         CREATE TABLE IF NOT EXISTS writes (day TEXT PRIMARY KEY, n INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS withheld_rows (tbl TEXT PRIMARY KEY, n INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS deferred_rows (tbl TEXT PRIMARY KEY, n INTEGER NOT NULL);
     """)
     return con
 
@@ -281,7 +282,7 @@ def delta(con, state, out_dir, tables=None, daily_cap=DEFAULT_DAILY_CAP, allow_m
         known = dict(state.execute("SELECT key, hash FROM row_hash WHERE tbl = ?", (t,)))
         before = len(known)
         s = summary[t] = {"rows": 0, "new": 0, "changed": 0, "deleted": 0, "deferred": 0, "writes": 0}
-        withheld = 0
+        withheld = waiting = 0  # waiting: changed or deleted rows held back by the daily cap
         for raw in con.execute(f"SELECT {','.join(cols)} FROM {t}"):
             row = _export_row(t, cols, raw, m)
             if row is None:  # stays in `known`, so a copy already in D1 is deleted
@@ -295,6 +296,7 @@ def delta(con, state, out_dir, tables=None, daily_cap=DEFAULT_DAILY_CAP, allow_m
                 continue
             if per_row > budget:
                 s["deferred"] += 1
+                waiting += old is not None  # a new row held back already shows as a missing row_hash
                 continue
             s["new" if old is None else "changed"] += 1
             budget -= per_row
@@ -311,11 +313,15 @@ def delta(con, state, out_dir, tables=None, daily_cap=DEFAULT_DAILY_CAP, allow_m
         for key in known:
             if per_row > budget:
                 s["deferred"] += 1
+                waiting += 1
                 continue
             s["deleted"] += 1
             budget -= per_row
             s["writes"] += per_row
             chunks.add([f"DELETE FROM {t} WHERE {_where(keys, json.loads(key))};"], [t, key, None], per_row)
+        # Changes held back by the cap: D1 still has the old rows, so the dataset is not up to date (refresh._unsent).
+        with state:
+            state.execute("INSERT OR REPLACE INTO deferred_rows VALUES (?, ?)", (t, waiting))
     if refused and not allow_mass_delete:
         for name in os.listdir(out_dir):
             os.remove(os.path.join(out_dir, name))
