@@ -499,6 +499,17 @@ def _failing(con, ds, today, settled, hopeless):
     return len(bad) if len(bad) >= FAILING_MIN and 2 * len(bad) >= len(filed) else 0
 
 
+def _half_unparsed(con, since, settled, hopeless):
+    """Half-year reports the parser opened and could not read (ValueError: no summary table, an unusual
+    layout). Like FAILED_READS they fail the same way every night, so a few of them are not a gap; at
+    FAILING_MIN or more the parser is broken and they all stay gaps."""
+    if not _table_exists(con, "reconcile_queue"):
+        return 0
+    bad = {r[0] for r in con.execute("SELECT doc_id FROM reconcile_queue WHERE dataset = 'half_year' AND last_error = 'ValueError'")}
+    open_ = [d for d in _missing(con, "half_year", since) if d["doc_id"] in bad and d["doc_id"] not in hopeless and d["submit_datetime"][:10] <= settled]
+    return len(open_) if len(open_) < FAILING_MIN else 0
+
+
 def publish_sql(con, state_path=None, days=35, today=None):
     ensure(con)
     today = today or date.today().isoformat()
@@ -512,6 +523,7 @@ def publish_sql(con, state_path=None, days=35, today=None):
     for ds in RULES:
         if ds in gaps:
             gaps[ds] += _failing(con, ds, today, settled, hopeless)
+    gaps["half_year"] -= _half_unparsed(con, since, settled, hopeless)
     for d in DATASETS:
         if d.get("owner") == "worker":
             continue

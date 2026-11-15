@@ -157,3 +157,15 @@ def test_a_parser_failing_most_new_filings_shows_as_a_gap(con):
         filing(con, f"V{i}", "180", day="2026-10-15")
         con.execute("INSERT INTO voting_read VALUES (?, 'read', 3, NULL)", (f"V{i}",))
     assert refresh._failing(con, "voting", "2026-10-20", "2026-10-19", set()) == 0
+
+
+def test_an_unreadable_half_year_report_is_not_a_gap_unless_many_fail(con):
+    # 544A on 2026-11-13: one report in an unusual layout ("no summary table") kept the dataset late.
+    filing(con, "H0", "160", day="2026-11-13")
+    con.execute("INSERT INTO reconcile_queue (doc_id, dataset, attempts, last_error) VALUES ('H0', 'half_year', 1, 'ValueError')")
+    assert refresh._half_unparsed(con, "2026-10-01", "2026-11-14", set()) == 1
+    for i in range(1, 5):  # five failing at once means the parser is broken: they stay gaps
+        con.execute("INSERT INTO issuers (edinet_code, ticker, listed) VALUES (?, ?, 1)", (f"E{i + 1}", f"100{i}"))
+        filing(con, f"H{i}", "160", day="2026-11-13", code=f"E{i + 1}", ticker=f"100{i}")
+        con.execute("INSERT INTO reconcile_queue (doc_id, dataset, attempts, last_error) VALUES (?, 'half_year', 1, 'ValueError')", (f"H{i}",))
+    assert refresh._half_unparsed(con, "2026-10-01", "2026-11-14", set()) == 0

@@ -527,6 +527,10 @@ def main(argv):
     else:
         print(__doc__)
         return 2
+    # A job that only tidied up (buybacks on a quiet day deletes withdrawn rows and reads nothing) would
+    # otherwise exit holding the write lock, and recording the run then fails with "database is locked".
+    con.commit()
+    con.close()
     return 0
 
 

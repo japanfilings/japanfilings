@@ -419,6 +419,7 @@ def run(con, limit=None):
     """Read every report and amendment not yet read. Returns (documents read, documents with parse_status 'parsed')."""
     con.executescript(SCHEMA)
     con.execute("DELETE FROM buyback_reports WHERE doc_id IN (SELECT doc_id FROM filings WHERE withdrawn = 1)")
+    con.commit()
     rows = con.execute(
         "SELECT f.doc_id, f.doc_type_code, f.submit_datetime, f.edinet_code, f.filer_name_ja, f.parent_doc_id, i.ticker "
         "FROM filings f LEFT JOIN issuers i ON i.edinet_code = f.edinet_code "
