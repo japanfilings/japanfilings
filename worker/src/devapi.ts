@@ -99,8 +99,12 @@ export const devRoutes = new Hono<DevEnv>();
 // A batch of 50 is 50 lookups, so it counts as 50 toward the monthly quota.
 async function charge(c: any, n: number): Promise<Response | null> {
   const auth: AuthOk = c.get("auth");
-  const used = await chargeExtra(c.env.DB, auth.keyHash, n - 1);
-  if (used > auth.quota) return c.json({ error: `Monthly quota of ${auth.quota} requests exceeded.` }, 429);
+  const { requests: used, over } = await chargeExtra(c.env.DB, auth.keyHash, n - 1, auth);
+  if (over === "minute") {
+    c.header("Retry-After", String(auth.minuteReset));
+    return c.json({ error: `A batch of ${n} needs ${n} of your ${auth.rpm} requests per minute. Retry after ${auth.minuteReset} seconds, or send fewer tickers.` }, 429);
+  }
+  if (over) return c.json({ error: `Monthly quota of ${auth.quota} requests exceeded.` }, 429);
   c.header("X-Quota-Used", String(used));
   c.header("RateLimit-Remaining", String(Math.max(auth.quota - used, 0)));
   return null;
@@ -232,7 +236,9 @@ export async function callDevTool(db: D1Database, plan: data.Plan, auth: AuthOk 
     case "get_financials_batch": {
       const p = parseTickers(Array.isArray(a?.tickers) ? a.tickers.join(",") : String(a?.tickers ?? ""));
       if ("error" in p) return toolText({ error: p.error }, true);
-      if (auth && (await chargeExtra(db, auth.keyHash, p.tickers.length - 1)) > auth.quota) return toolText({ error: "Monthly quota exceeded." }, true);
+      const over = auth ? (await chargeExtra(db, auth.keyHash, p.tickers.length - 1, auth)).over : null;
+      if (over === "minute") return toolText({ error: `Per-minute limit of ${auth!.rpm} requests reached. Retry after ${auth!.minuteReset} seconds, or send fewer tickers.` }, true);
+      if (over) return toolText({ error: "Monthly quota exceeded." }, true);
       return toolText(name === "get_companies_batch" ? await batchCompanies(db, p.tickers) : await batchFinancials(db, p.tickers, false));
     }
     case "list_companies": {

@@ -142,14 +142,19 @@ test("batch reserves both monthly quota and RPM before reading data", async () =
   const owner = await ownerOf(key);
   const month = new Date().toISOString().slice(0, 7);
   await sql(`UPDATE usage SET requests = 19999, minute_count = 1 WHERE key_hash = '${owner}' AND month = '${month}'`);
-  assert.equal((await fetch(BASE + "/v1/batch/companies?tickers=7203,6758", { headers })).status, 429);
+  const byMonth = await fetch(BASE + "/v1/batch/companies?tickers=7203,6758", { headers });
+  assert.equal(byMonth.status, 429);
+  assert.match((await byMonth.json()).error, /Monthly quota/);
   assert.equal((await sql(`SELECT requests FROM usage WHERE key_hash = '${owner}' AND month = '${month}'`))[0].requests, 20000);
   // The per-minute count resets when the minute changes; a slow local `wrangler d1 execute` (several seconds
   // under load) must not let the request below fall into the next minute.
   // The minute is set here too: the one stored by the first request may already be past.
   if (new Date().getSeconds() > 40) await new Promise((ok) => setTimeout(ok, (61 - new Date().getSeconds()) * 1000));
   await sql(`UPDATE usage SET requests = 10, minute_count = 58, minute = ${Math.floor(Date.now() / 60_000)} WHERE key_hash = '${owner}' AND month = '${month}'`);
-  assert.equal((await fetch(BASE + "/v1/batch/companies?tickers=7203,6758,4042", { headers })).status, 429);
+  const byMinute = await fetch(BASE + "/v1/batch/companies?tickers=7203,6758,4042", { headers });
+  assert.equal(byMinute.status, 429);
+  assert.ok(Number(byMinute.headers.get("retry-after")) >= 1, "a per-minute refusal says when to retry");
+  assert.match((await byMinute.json()).error, /per minute/, "and is not reported as the monthly quota");
 });
 
 if (!SECRET) {

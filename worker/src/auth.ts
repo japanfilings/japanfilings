@@ -63,32 +63,30 @@ export const minuteHeaders = (a: { rpm: number; minuteUsed: number }) => ({
   "X-RateLimit-Remaining-Minute": String(Math.max(a.rpm - a.minuteUsed, 0)),
 });
 
-/** Batch calls count one request per item. Returns the month's new total. */
-export async function chargeExtra(db: D1Database, owner: string, extra: number): Promise<number> {
+/** Batch calls count one request per item, against the limits of the plan that meter() already
+ *  authorised (an OAuth-only account has no API key to look a plan up from). A refused batch charges
+ *  nothing; `over` says which limit refused it. */
+export async function chargeExtra(
+  db: D1Database, owner: string, extra: number, limits: { quota: number; rpm: number },
+): Promise<{ requests: number; over: "month" | "minute" | null }> {
   const amount = Math.max(Math.trunc(extra), 0);
-  const hash = owner.startsWith("key:") ? owner.slice(4) : null;
-  const key = await db
-    .prepare("SELECT plan FROM api_keys WHERE revoked = 0 AND ((?2 IS NULL AND user_id = ?1) OR key_hash = ?2) ORDER BY created_at DESC LIMIT 1")
-    .bind(owner, hash)
-    .first<{ plan: string }>();
-  if (!key || !Object.hasOwn(QUOTA, key.plan) || !Object.hasOwn(RPM, key.plan)) return Number.MAX_SAFE_INTEGER;
-  const plan = key.plan as Plan;
   // Reuse the exact row and fixed-minute window opened by meter(). Besides closing the UTC-month
   // rollover gap, the conditional UPDATE makes concurrent batches reserve quota atomically.
   const current = await db
     .prepare("SELECT month, minute, requests FROM usage WHERE key_hash = ?1 ORDER BY minute DESC LIMIT 1")
     .bind(owner)
     .first<{ month: string; minute: number; requests: number }>();
-  if (!current || amount === 0) return current?.requests ?? 0;
+  if (!current || amount === 0) return { requests: current?.requests ?? 0, over: null };
   const row = await db
     .prepare(
       "UPDATE usage SET requests = requests + ?4, minute_count = minute_count + ?4 " +
         "WHERE key_hash = ?1 AND month = ?2 AND minute = ?3 AND requests + ?4 <= ?5 AND minute_count + ?4 <= ?6 " +
         "RETURNING requests",
     )
-    .bind(owner, current.month, current.minute, amount, QUOTA[plan], RPM[plan])
+    .bind(owner, current.month, current.minute, amount, limits.quota, limits.rpm)
     .first<{ requests: number }>();
-  return row?.requests ?? QUOTA[plan] + 1;
+  if (row) return { requests: row.requests, over: null };
+  return { requests: current.requests, over: current.requests + amount > limits.quota ? "month" : "minute" };
 }
 
 export async function authorize(db: D1Database, key: string | null, billingProvider?: string): Promise<AuthResult> {
