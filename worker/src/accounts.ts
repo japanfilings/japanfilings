@@ -23,6 +23,16 @@ const LINK_WINDOW_MIN = 15;
 
 const MAX_LINKS_PER_NETWORK_HOUR = 10;
 
+/** The unit the sign-in limit counts: an IPv4 address, or an IPv6 /64 (one home or one server can use
+ *  any address in its /64, so counting single addresses would not limit it). */
+export function networkOf(ip: string): string {
+  if (!ip.includes(":")) return ip;
+  const [head, tail = ""] = ip.toLowerCase().split("::");
+  const h = head ? head.split(":") : [], t = ip.includes("::") && tail ? tail.split(":") : [];
+  const groups = ip.includes("::") ? [...h, ...Array(Math.max(8 - h.length - t.length, 0)).fill("0"), ...t] : h;
+  return groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "")).join(":") + "::/64";
+}
+
 export async function startLogin(env: AccountEnv, email: string, origin: string, ip = ""): Promise<{ sent: boolean; devLink?: string; throttled?: boolean }> {
   // A few links per address per window, so the form cannot be used to flood someone's inbox.
   const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM login_tokens WHERE email = ?1 AND expires_at > ?2")
@@ -34,7 +44,7 @@ export async function startLogin(env: AccountEnv, email: string, origin: string,
   // Cloudflare always gives the visitor's address in production; a local test server gives none or a
   // loopback address, and is not limited.
   const limited = ip && ip !== "127.0.0.1" && ip !== "::1";
-  const ipHash = limited ? await sha256Hex(`${new Date().toISOString().slice(0, 10)}:${ip}`) : null;
+  const ipHash = limited ? await sha256Hex(`${new Date().toISOString().slice(0, 10)}:${networkOf(ip)}`) : null;
   if (ipHash) {
     const fromNetwork = await env.DB.prepare("SELECT COUNT(*) AS n FROM login_tokens WHERE ip_hash = ?1 AND expires_at > ?2")
       .bind(ipHash, isoIn((LINK_TTL_MIN - 60) * 60_000))
