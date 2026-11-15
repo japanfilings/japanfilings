@@ -1,6 +1,7 @@
 // Email sign-in links, sessions and self-service API keys. Tokens, sessions and keys are
 // stored only as SHA-256 hashes.
 import { sha256Hex } from "./auth";
+import { ipHash } from "./iphash";
 import type { Plan } from "./data";
 
 export type AccountEnv = { DB: D1Database; RESEND_API_KEY?: string; MAIL_FROM?: string; DEV_SHOW_LINKS?: string };
@@ -44,16 +45,16 @@ export async function startLogin(env: AccountEnv, email: string, origin: string,
   // Cloudflare always gives the visitor's address in production; a local test server gives none or a
   // loopback address, and is not limited.
   const limited = ip && ip !== "127.0.0.1" && ip !== "::1";
-  const ipHash = limited ? await sha256Hex(`${new Date().toISOString().slice(0, 10)}:${networkOf(ip)}`) : null;
-  if (ipHash) {
+  const netHash = limited ? await ipHash(env.DB, networkOf(ip)) : null;
+  if (netHash) {
     const fromNetwork = await env.DB.prepare("SELECT COUNT(*) AS n FROM login_tokens WHERE ip_hash = ?1 AND expires_at > ?2")
-      .bind(ipHash, isoIn((LINK_TTL_MIN - 60) * 60_000))
+      .bind(netHash, isoIn((LINK_TTL_MIN - 60) * 60_000))
       .first<{ n: number }>();
     if ((fromNetwork?.n ?? 0) >= MAX_LINKS_PER_NETWORK_HOUR) return { sent: false, throttled: true };
   }
   const token = randomToken();
   await env.DB.prepare("INSERT INTO login_tokens (token_hash, email, expires_at, ip_hash) VALUES (?1, ?2, ?3, ?4)")
-    .bind(await sha256Hex(token), email, isoIn(LINK_TTL_MIN * 60_000), ipHash)
+    .bind(await sha256Hex(token), email, isoIn(LINK_TTL_MIN * 60_000), netHash)
     .run();
   const link = `${origin}/auth/verify?token=${token}`;
   if (env.RESEND_API_KEY && env.MAIL_FROM) {

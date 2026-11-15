@@ -1,6 +1,7 @@
 // The /contact form: correction, removal and personal-data requests, stored in D1 and forwarded to the owner by email.
 import { validEmail } from "./accounts";
 import { sha256Hex } from "./auth";
+import { ipHash } from "./iphash";
 
 export type ContactEnv = { DB: D1Database; RESEND_API_KEY?: string; MAIL_FROM?: string; CONTACT_EMAIL?: string };
 
@@ -28,13 +29,12 @@ export async function submit(env: ContactEnv, form: Record<string, unknown>, ip:
   if (!(kind in CONTACT_KINDS)) return { ok: false, error: "Please choose what the request is about.", status: 400 };
   if (message.length < 10 || message.length > 5000) return { ok: false, error: "Please write between 10 and 5,000 characters.", status: 400 };
   if (!validEmail(email)) return { ok: false, error: "Please enter an email address we can answer.", status: 400 };
-  const day = now.toISOString().slice(0, 10);
-  const ipHash = await sha256Hex(`${day}:${ip}`); // changes daily, so it cannot follow a sender over time
-  const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM contact_messages WHERE ip_hash = ?1").bind(ipHash).first<{ n: number }>();
+  const netHash = await ipHash(env.DB, ip); // keyed per day (src/iphash.ts), so it cannot follow a sender over time
+  const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM contact_messages WHERE ip_hash = ?1").bind(netHash).first<{ n: number }>();
   if ((recent?.n ?? 0) >= MAX_PER_DAY) return { ok: false, error: "Too many requests from this network today. Please try again tomorrow.", status: 429 };
   const id = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO contact_messages (id, created_at, kind, page, message, reply_email, ip_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")
-    .bind(id, now.toISOString(), kind, page, message, email, ipHash).run();
+    .bind(id, now.toISOString(), kind, page, message, email, netHash).run();
   await forward(env, { id, created_at: now.toISOString(), kind, page, message, reply_email: email });
   return { ok: true };
 }

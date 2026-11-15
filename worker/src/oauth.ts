@@ -19,6 +19,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { cors } from "hono/cors";
 import { SESSION_COOKIE, currentUser, type AccountEnv, type User } from "./accounts";
 import { meter, sha256Hex, type AuthResult } from "./auth";
+import { ipHash } from "./iphash";
 import type { Plan } from "./data";
 
 export type OAuthEnv = AccountEnv & { OAUTH_ENABLED?: string; PUBLIC_ORIGIN?: string };
@@ -254,7 +255,7 @@ oauthRoutes.post("/oauth/register", async (c) => {
   if (Array.isArray(body.response_types) && body.response_types.some((r: unknown) => r !== "code")) return bad("invalid_client_metadata", "Only the code response type is supported.");
 
   const ip = c.req.header("cf-connecting-ip") ?? "unknown";
-  const bucket = await sha256Hex(`${ip}|${new Date().toISOString().slice(0, 13)}`);
+  const bucket = await ipHash(c.env.DB, `${ip}|${new Date().toISOString().slice(0, 13)}`);
   const seen = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM oauth_clients WHERE reg_bucket = ?1").bind(bucket).first<{ n: number }>();
   if ((seen?.n ?? 0) >= MAX_REGISTRATIONS_PER_HOUR) return c.json({ error: "too_many_requests", error_description: "Too many registrations. Try again later." }, 429, { "Retry-After": "3600" });
 

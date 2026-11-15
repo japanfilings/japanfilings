@@ -419,3 +419,15 @@ if (!SECRET) {
     assert.equal((await res.json()).ignored, true);
   });
 }
+
+test("network-address hashes use the day's random key, not a plain hash of the address", async () => {
+  const { createHash } = await import("node:crypto");
+  const ip = `198.51.100.${1 + Math.floor(Math.random() * 250)}`, email = `salt-${randomUUID()}@example.test`;
+  await fetch(BASE + "/login", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": ip }, body: new URLSearchParams({ email }) });
+  const day = new Date().toISOString().slice(0, 10);
+  const [row] = await sql(`SELECT ip_hash FROM login_tokens WHERE email = '${email}'`);
+  const [salt] = await sql(`SELECT salt FROM ip_salts WHERE day = '${day}'`);
+  assert.ok(row?.ip_hash && salt?.salt && salt.salt.length === 64);
+  assert.notEqual(row.ip_hash, createHash("sha256").update(`${day}:${ip}`).digest("hex"), "the old unkeyed form");
+  assert.equal(row.ip_hash, createHash("sha256").update(`${salt.salt}:${ip}`).digest("hex"));
+});

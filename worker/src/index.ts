@@ -18,6 +18,7 @@ import { rebuildFacts, resolveSector } from "./screener";
 import { filerBlocked } from "./privacy";
 import * as site from "./site";
 import * as webhooks from "./webhooks";
+import { purgeIpSalts } from "./iphash";
 
 type Bindings = accounts.AccountEnv & billing.BillingEnv & oauth.OAuthEnv & site.LegalEnv & { CONTACT_EMAIL?: string; EDINET_API_KEY?: string };
 type Env = { Bindings: Bindings; Variables: { plan: data.Plan; owner: string; user: accounts.User | null; auth: AuthOk } };
@@ -660,6 +661,7 @@ export default {
       ctx.waitUntil(oauth.purgeOAuth(env.DB).catch((e) => console.error("oauth purge", e)));
       ctx.waitUntil(contactForm.purge(env.DB).catch((e) => console.error("contact purge", e)));
       ctx.waitUntil(accounts.purgeLoginTokens(env.DB).catch((e) => console.error("login purge", e)));
+      ctx.waitUntil(purgeIpSalts(env.DB).catch((e) => console.error("ip salt purge", e)));
     }
   },
 };
