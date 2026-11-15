@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "wrangler dev --local",
     "db:local": "wrangler d1 migrations apply japanfilings --local",
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "deploy": "wrangler deploy"
   },
   "dependencies": {

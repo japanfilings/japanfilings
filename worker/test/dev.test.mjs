@@ -15,7 +15,14 @@ async function verifyLink(link, headers = {}) {
   return fetch(u.origin + "/auth/verify", { method: "POST", redirect: "manual", headers: { ...headers, origin: u.origin, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: u.searchParams.get("token") }) });
 }
 const PRO = process.env.PRO_KEY;
-const get = (path, key) => fetch(BASE + path, { headers: key ? { authorization: `Bearer ${key}` } : {} });
+// Retries the local D1 simulator's 503 + Retry-After under load, as a client would (see api.test.mjs).
+async function get(path, key) {
+  for (let i = 0; ; i++) {
+    const r = await fetch(BASE + path, { headers: key ? { authorization: `Bearer ${key}` } : {} });
+    if (r.status !== 503 || !r.headers.get("retry-after") || i === 2) return r;
+    await new Promise((ok) => setTimeout(ok, 1000));
+  }
+}
 const rpc = (token, method, params, id = 1) =>
   fetch(BASE + "/mcp", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) });
 

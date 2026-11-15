@@ -169,3 +169,18 @@ def test_an_unreadable_half_year_report_is_not_a_gap_unless_many_fail(con):
         filing(con, f"H{i}", "160", day="2026-11-13", code=f"E{i + 1}", ticker=f"100{i}")
         con.execute("INSERT INTO reconcile_queue (doc_id, dataset, attempts, last_error) VALUES (?, 'half_year', 1, 'ValueError')", (f"H{i}",))
     assert refresh._half_unparsed(con, "2026-10-01", "2026-11-14", set()) == 0
+
+
+def test_a_quiet_buybacks_run_is_still_recorded(tmp_path):
+    # 2026-11-14: with nothing to read, buybacks left its DELETE uncommitted and recording the run
+    # failed with "database is locked" after 60 seconds, so the dataset looked overdue.
+    import os
+    import subprocess
+    import sys
+    db = tmp_path / "j.db"
+    c = sqlite3.connect(db); c.executescript(store.SCHEMA); c.commit(); c.close()
+    out = subprocess.run([sys.executable, "-m", "japanfilings.cli", "buybacks"], env={**os.environ, "JAPANFILINGS_DB": str(db)},
+                         capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0 and "database is locked" not in out.stderr
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT last_success_at IS NOT NULL FROM dataset_runs WHERE dataset = 'buybacks'").fetchone() == (1,)

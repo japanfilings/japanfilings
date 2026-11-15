@@ -17,7 +17,15 @@ async function verifyLink(link, headers = {}) {
   if (!(await page.text()).includes('action="/auth/verify"')) throw new Error("no sign-in button on " + link);
   return fetch(u.origin + "/auth/verify", { method: "POST", redirect: "manual", headers: { ...headers, origin: u.origin, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: u.searchParams.get("token") }) });
 }
-const get = (path, key) => fetch(BASE + path, { headers: key ? { authorization: `Bearer ${key}` } : {} });
+// The local D1 simulator sometimes refuses a query under load ("Failed to get session commit token"); the
+// Worker answers 503 with Retry-After, and a client retries, as these tests do (up to twice).
+async function get(path, key) {
+  for (let i = 0; ; i++) {
+    const r = await fetch(BASE + path, { headers: key ? { authorization: `Bearer ${key}` } : {} });
+    if (r.status !== 503 || !r.headers.get("retry-after") || i === 2) return r;
+    await new Promise((ok) => setTimeout(ok, 1000));
+  }
+}
 const mcp = (key, body) =>
   fetch(BASE + "/mcp", { method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify(body) });
 
@@ -319,8 +327,10 @@ test("pages avoid dropped features and banned wording; signup wording is honest"
     assert.doesNotMatch(text, /call rate|lending rate|macro|robots\.txt|own websites?|IR sites?|決算短信|transcripts?/i, path);
     assert.doesNotMatch(text, WITHHELD, path);
   }
-  assert.match(await (await get("/pricing")).text(), /Billing is not connected/);
-  assert.doesNotMatch(await (await get("/terms")).text(), /merchant of record/);
+  // Billing open (the billing tests' mode, PADDLE_WEBHOOK_SECRET exported): the paid terms show instead.
+  const open = !!process.env.PADDLE_WEBHOOK_SECRET;
+  (open ? assert.doesNotMatch : assert.match)(await (await get("/pricing")).text(), /Billing is not connected/);
+  (open ? assert.match : assert.doesNotMatch)(await (await get("/terms")).text(), /merchant of record/);
 });
 
 test("docs cover every OpenAPI path and every MCP tool", async () => {
@@ -375,8 +385,11 @@ test("voting results never carry candidate or officer names", async () => {
 });
 
 test("sign-in links are limited per network as well as per address", async () => {
-  const ip = `203.0.113.${Math.floor(Math.random() * 250)}`;
-  const send = (i) => fetch(BASE + "/login", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": ip }, body: new URLSearchParams({ email: `net${i}-${Date.now()}@example.test` }) }).then((r) => r.text());
+  // A random /64 for each run, so repeated runs within the hour do not share a count. Each request uses a
+  // different address inside it: the limit counts the /64, not the single address.
+  const hex = () => Math.floor(Math.random() * 0xffff).toString(16);
+  const net = `2001:db8:${hex()}:${hex()}`;
+  const send = (i) => fetch(BASE + "/login", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": `${net}::${(i + 1).toString(16)}` }, body: new URLSearchParams({ email: `net${i}-${Date.now()}@example.test` }) }).then((r) => r.text());
   for (let i = 0; i < 10; i++) assert.doesNotMatch(await send(i), /already sent several links/);
   assert.match(await send(10), /already sent several links/);
 });

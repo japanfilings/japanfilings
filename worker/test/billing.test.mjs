@@ -144,7 +144,11 @@ test("batch reserves both monthly quota and RPM before reading data", async () =
   await sql(`UPDATE usage SET requests = 19999, minute_count = 1 WHERE key_hash = '${owner}' AND month = '${month}'`);
   assert.equal((await fetch(BASE + "/v1/batch/companies?tickers=7203,6758", { headers })).status, 429);
   assert.equal((await sql(`SELECT requests FROM usage WHERE key_hash = '${owner}' AND month = '${month}'`))[0].requests, 20000);
-  await sql(`UPDATE usage SET requests = 10, minute_count = 58 WHERE key_hash = '${owner}' AND month = '${month}'`);
+  // The per-minute count resets when the minute changes; a slow local `wrangler d1 execute` (several seconds
+  // under load) must not let the request below fall into the next minute.
+  // The minute is set here too: the one stored by the first request may already be past.
+  if (new Date().getSeconds() > 40) await new Promise((ok) => setTimeout(ok, (61 - new Date().getSeconds()) * 1000));
+  await sql(`UPDATE usage SET requests = 10, minute_count = 58, minute = ${Math.floor(Date.now() / 60_000)} WHERE key_hash = '${owner}' AND month = '${month}'`);
   assert.equal((await fetch(BASE + "/v1/batch/companies?tickers=7203,6758,4042", { headers })).status, 429);
 });
 
