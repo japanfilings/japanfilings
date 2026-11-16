@@ -206,3 +206,16 @@ def test_a_quiet_buybacks_run_is_still_recorded(tmp_path):
     assert out.returncode == 0 and "database is locked" not in out.stderr
     c = sqlite3.connect(db)
     assert c.execute("SELECT last_success_at IS NOT NULL FROM dataset_runs WHERE dataset = 'buybacks'").fetchone() == (1,)
+
+
+def test_check_imports_without_the_word_lists():
+    """The watchdog runs `refresh check` without LEXICON_JSON or the private word lists."""
+    import subprocess, sys, tempfile, shutil, pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    with tempfile.TemporaryDirectory() as d:
+        shutil.copytree(root / "japanfilings", pathlib.Path(d) / "japanfilings", ignore=shutil.ignore_patterns("private", "__pycache__"))
+        (pathlib.Path(d) / "worker" / "src").mkdir(parents=True)
+        shutil.copy(root / "worker" / "src" / "datasets.json", pathlib.Path(d) / "worker" / "src")
+        env = {k: v for k, v in __import__("os").environ.items() if k != "LEXICON_JSON"}
+        r = subprocess.run([sys.executable, "-c", "import japanfilings.refresh"], cwd=d, env=env, capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
