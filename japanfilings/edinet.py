@@ -5,6 +5,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timedelta, timezone
 
 API = "https://api.edinet-fsa.go.jp/api/v2"
 
@@ -20,6 +21,12 @@ if not os.environ.get("EDINET_API_KEY") and os.path.exists(_ENV_FILE):
 
 _MIN_INTERVAL_S = 1.0  # be polite to a public service
 _last_call = 0.0
+
+
+class EdinetError(RuntimeError):
+    def __init__(self, data):
+        super().__init__(f"EDINET error: {data}")
+        self.status = str(data.get("metadata", {}).get("status") or data.get("StatusCode"))
 
 
 def _get(path, params, raw=False):
@@ -52,13 +59,20 @@ def _get(path, params, raw=False):
     data = json.loads(body)
     status = data.get("metadata", {}).get("status") or data.get("StatusCode")
     if str(status) not in ("200", "None"):
-        raise RuntimeError(f"EDINET error: {data}")
+        raise EdinetError(data)
     return data
 
 
 def documents(day: str) -> list[dict]:
     """All filings submitted on `day` (YYYY-MM-DD), with metadata."""
-    return _get("documents.json", {"date": day, "type": 2}).get("results", [])
+    try:
+        return _get("documents.json", {"date": day, "type": 2}).get("results", [])
+    except EdinetError as e:
+        # Just after midnight JST EDINET has no list for the new day yet and answers 404; a late
+        # nightly run that reaches today must not fail on it. Any earlier day still raises.
+        if e.status == "404" and day >= datetime.now(timezone(timedelta(hours=9))).date().isoformat():
+            return []
+        raise
 
 
 def large_holding_documents(day: str) -> list[dict]:
