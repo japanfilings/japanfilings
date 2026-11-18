@@ -2,16 +2,17 @@
 // and takes its route list from /openapi.json and tools/list, so a new endpoint is covered without touching this file.
 import assert from "node:assert/strict";
 import { createHash, createHmac } from "node:crypto";
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import test from "node:test";
+import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const out = join(mkdtempSync(join(tmpdir(), "jf-mask-")), "w.mjs");
+after(() => rmSync(dirname(out), { recursive: true, force: true }));
 await build({ entryPoints: [join(here, "../src/index.ts")], bundle: true, format: "esm", outfile: out, platform: "neutral", mainFields: ["module", "main"], logLevel: "error", loader: { ".json": "json" } });
 const worker = (await import(pathToFileURL(out))).default;
 

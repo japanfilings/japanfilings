@@ -1,14 +1,15 @@
 // Unit tests for the sign-in limit's network key. No server needed.
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const out = join(mkdtempSync(join(tmpdir(), "jf-")), "m.mjs");
+after(() => rmSync(dirname(out), { recursive: true, force: true }));
 writeFileSync(out + ".entry.ts", `export { networkOf } from "${here}/../src/accounts";`);
 await build({ entryPoints: [out + ".entry.ts"], bundle: true, format: "esm", outfile: out, platform: "neutral", logLevel: "error", external: ["hono"] });
 const { networkOf } = await import(pathToFileURL(out));

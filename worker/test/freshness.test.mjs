@@ -1,15 +1,16 @@
 // Rules run on real SQLite with the real migrations; API checks run against BASE with PRO_KEY/FREE_KEY.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import test from "node:test";
+import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const out = join(mkdtempSync(join(tmpdir(), "jf-")), "m.mjs");
+after(() => rmSync(dirname(out), { recursive: true, force: true }));
 writeFileSync(out + ".entry.ts", `export * from "${here}/../src/freshness"; export * from "${here}/../src/ondemand";`);
 await build({ entryPoints: [out + ".entry.ts"], bundle: true, format: "esm", outfile: out, platform: "neutral", logLevel: "error", external: ["hono"] });
 const m = await import(pathToFileURL(out));

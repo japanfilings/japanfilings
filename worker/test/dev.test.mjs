@@ -82,14 +82,17 @@ async function loadFormat() {
   try { return await import("../src/format.ts"); } catch { return localFormat; }
 }
 const localFormat = await (async () => {
-  const { readFileSync, writeFileSync, mkdtempSync } = await import("node:fs");
+  const { readFileSync, writeFileSync, mkdtempSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const ts = (await import("typescript")).default;
   const out = ts.transpileModule(readFileSync(new URL("../src/format.ts", import.meta.url), "utf8"), { compilerOptions: { module: "ESNext", target: "ES2022" } }).outputText;
-  const file = join(mkdtempSync(join(tmpdir(), "jf-")), "format.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "jf-"));
+  const file = join(dir, "format.mjs");
   writeFileSync(file, out);
-  return import(file);
+  const mod = await import(file);
+  rmSync(dir, { recursive: true, force: true });
+  return mod;
 })();
 
 test("per-minute limit: 429 with Retry-After, and refused calls are not billed", async () => {

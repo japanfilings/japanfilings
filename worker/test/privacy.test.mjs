@@ -1,14 +1,15 @@
 // Unit tests for the issuer-name rule in src/privacy.ts. Route-level coverage is in masking.test.mjs.
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const out = join(mkdtempSync(join(tmpdir(), "jf-priv-")), "p.mjs");
+after(() => rmSync(dirname(out), { recursive: true, force: true }));
 await build({ entryPoints: [join(here, "../src/privacy.ts")], bundle: true, format: "esm", outfile: out, platform: "neutral", logLevel: "error" });
 const { looksLikeOrganization, publicIssuerName, publicHolding, publicEvent, publicFilerName, publicFiling, publicTenderOffer, publicRegisterName, publicCompanyPeople, splitFilerName } = await import(pathToFileURL(out));
 

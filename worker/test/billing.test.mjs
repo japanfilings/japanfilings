@@ -7,10 +7,15 @@
 //     PADDLE_WEBHOOK_SECRET=test_only_not_a_secret
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { rmSync } from "node:fs";
 import { createHmac, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import test, { after, before } from "node:test";
 import { promisify } from "node:util";
+
+// One wrangler log for the whole run, removed at the end.
+const WRANGLER_LOG = `/tmp/jf-wrangler-test-${randomUUID()}.log`;
+after(() => rmSync(WRANGLER_LOG, { force: true }));
 
 const BASE = process.env.BASE ?? "http://localhost:8788";
 
@@ -79,7 +84,7 @@ async function sql(command) {
       const { stdout } = await exec(
         "npx",
         ["wrangler", "d1", "execute", "japanfilings", "--local", ...persist, "--json", "--command", command],
-        { env: { ...process.env, WRANGLER_LOG_PATH: process.env.WRANGLER_LOG_PATH ?? `/tmp/jf-wrangler-test-${randomUUID()}.log` } },
+        { env: { ...process.env, WRANGLER_LOG_PATH: process.env.WRANGLER_LOG_PATH ?? WRANGLER_LOG } },
       );
       return JSON.parse(stdout)[0].results;
     } catch (err) {

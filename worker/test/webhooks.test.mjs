@@ -1,16 +1,17 @@
 // Unit tests for src/webhooks.ts: address filtering, test-send event choice, and registration order.
 // Runs on real SQLite with the real migrations; DNS and delivery are stubbed through globalThis.fetch.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import test from "node:test";
+import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const out = join(mkdtempSync(join(tmpdir(), "jf-wh-")), "w.mjs");
+after(() => rmSync(dirname(out), { recursive: true, force: true }));
 await build({ entryPoints: [join(here, "../src/webhooks.ts")], bundle: true, format: "esm", outfile: out, platform: "neutral", mainFields: ["module", "main"], logLevel: "error", loader: { ".json": "json" } });
 const wh = await import(pathToFileURL(out));
 
